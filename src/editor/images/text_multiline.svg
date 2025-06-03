@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 51.04 49.47">
+<defs><style>.cls-1,.cls-3{fill:none;}.cls-2{fill:#f9ba00;}.cls-3{stroke:#fff;stroke-linecap:round;stroke-miterlimit:10;stroke-width:2px;}</style></defs>
+<g id="Calque_2" data-name="Calque 2"><g id="Calque_1-2" data-name="Calque 1">
+<polyline class="cls-1" points="6.8 0 51.04 0 51.04 49.47 0 49.47 0 0 6.8 0"/>
+<!-- Línea 1 de texto -->
+<rect class="cls-2" x="12" y="15" width="25" height="2" rx="1"/>
+<!-- Línea 2 de texto -->
+<rect class="cls-2" x="12" y="20" width="20" height="2" rx="1"/>
+<!-- Línea 3 de texto -->
+<rect class="cls-2" x="12" y="25" width="22" height="2" rx="1"/>
+<!-- Línea 4 de texto -->
+<rect class="cls-2" x="12" y="30" width="18" height="2" rx="1"/>
+<polyline class="cls-3" points="37.21 9.9 39.86 14.56 39.86 34.47 37.21 39.57"/>
+<polyline class="cls-3" points="42.51 9.9 39.86 14.56 39.86 34.47 42.51 39.57"/>
+</g></g>
+</svg> 

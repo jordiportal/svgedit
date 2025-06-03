@@ -331,6 +331,16 @@ export const textActionsMethod = (function () {
       svgCanvas.textActions.toEditMode(x, y)
     },
     /**
+     * @param {Element} target
+     * @param {Float} x
+     * @param {Float} y
+     * @returns {void}
+     */
+    selectMultiline (target, x, y) {
+      curtext = target
+      svgCanvas.textActions.toMultilineEditMode(x, y)
+    },
+    /**
      * @param {Element} elem
      * @returns {void}
      */
@@ -426,6 +436,112 @@ export const textActionsMethod = (function () {
         setCursorFromPoint(pt.x, pt.y)
       }
 
+      setTimeout(function () {
+        allowDbl = true
+      }, 300)
+    },
+    /**
+     * @param {Float} x
+     * @param {Float} y
+     * @returns {void}
+     */
+    toMultilineEditMode (x, y) {
+      allowDbl = false
+      svgCanvas.setCurrentMode('textedit')
+      svgCanvas.selectorManager.requestSelector(curtext).showGrips(false)
+      
+      // Crear textarea para edición multilínea
+      const bbox = curtext.getBBox()
+      let multilineEditor = document.getElementById('multiline_text_editor')
+      
+      if (!multilineEditor) {
+        multilineEditor = document.createElement('textarea')
+        multilineEditor.id = 'multiline_text_editor'
+        multilineEditor.style.cssText = `
+          position: absolute;
+          background: white;
+          border: 2px solid #4285f4;
+          border-radius: 4px;
+          padding: 8px;
+          font-family: ${curtext.getAttribute('font-family') || 'Arial'};
+          font-size: ${curtext.getAttribute('font-size') || '16'}px;
+          color: ${curtext.getAttribute('fill') || 'black'};
+          resize: both;
+          z-index: 1000;
+          min-width: 200px;
+          min-height: 100px;
+        `
+        document.body.appendChild(multilineEditor)
+      }
+      
+      // Extraer texto de los tspan
+      const tspans = curtext.querySelectorAll('tspan')
+      let textValue = ''
+      tspans.forEach((tspan, index) => {
+        if (index > 0) textValue += '\n'
+        textValue += tspan.textContent
+      })
+      
+      multilineEditor.value = textValue
+      
+      // Posicionar el editor
+      const canvasRect = svgCanvas.getContentElem().getBoundingClientRect()
+      const workarea = document.getElementById('workarea')
+      const workareaRect = workarea.getBoundingClientRect()
+      
+      const zoom = svgCanvas.getZoom()
+      const left = workareaRect.left + (bbox.x * zoom) + workarea.scrollLeft
+      const top = workareaRect.top + (bbox.y * zoom) + workarea.scrollTop
+      
+      multilineEditor.style.left = `${left}px`
+      multilineEditor.style.top = `${top}px`
+      multilineEditor.style.width = `${Math.max(200, bbox.width * zoom)}px`
+      multilineEditor.style.height = `${Math.max(100, bbox.height * zoom)}px`
+      
+      // Mostrar y enfocar
+      multilineEditor.style.display = 'block'
+      multilineEditor.focus()
+      multilineEditor.select()
+      
+      // Manejar eventos
+      const updateText = () => {
+        const lines = multilineEditor.value.split('\n')
+        
+        // Limpiar tspans existentes
+        while (curtext.firstChild) {
+          curtext.removeChild(curtext.firstChild)
+        }
+        
+        // Añadir nuevos tspans
+        const fontSize = parseFloat(curtext.getAttribute('font-size') || 16)
+        const lineHeight = fontSize * 1.2
+        
+        lines.forEach((line, index) => {
+          const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan')
+          tspan.setAttribute('x', curtext.getAttribute('x') || 0)
+          tspan.setAttribute('dy', index === 0 ? '0' : lineHeight)
+          tspan.textContent = line || ' ' // Espacio en blanco para líneas vacías
+          curtext.appendChild(tspan)
+        })
+        
+        svgCanvas.call('changed', [curtext])
+      }
+      
+      const hideEditor = () => {
+        updateText()
+        multilineEditor.style.display = 'none'
+        svgCanvas.textActions.toSelectMode(true)
+      }
+      
+      // Eventos del editor
+      multilineEditor.onblur = hideEditor
+      multilineEditor.onkeydown = (e) => {
+        if (e.key === 'Escape') {
+          hideEditor()
+          e.preventDefault()
+        }
+      }
+      
       setTimeout(function () {
         allowDbl = true
       }, 300)

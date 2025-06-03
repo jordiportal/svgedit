@@ -161,6 +161,7 @@ export default {
     mode_fhellipse: 'Free-Hand Ellipse',
     mode_path: 'Path Tool',
     mode_text: 'Text Tool',
+    mode_textmultiline: 'Multiline Text Tool',
     mode_image: 'Image Tool',
     mode_zoom: 'Zoom Tool',
     no_embed: 'NOTE: This image cannot be embedded. It will depend on this path to be displayed',
@@ -199,6 +200,7 @@ export default {
     tool_unlink_use: 'Break link to reference element (make unique)',
     ellipse_circle_tool: 'Ellipse/Circle Tool',
     square_rect_tool: 'Square/Rect Tool',
+    text_tool: 'Text Tool',
     remember_this_choice: 'Remember this choice?',
     remember_this_choice_title: 'If you choose to opt out of storage while remembering this choice, the URL will change so as to avoid asking again.'
   },

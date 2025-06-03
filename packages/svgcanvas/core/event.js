@@ -522,6 +522,35 @@ const mouseMoveEvent = (evt) => {
       svgCanvas.call('transition', selectedElements)
       break
     }
+    case 'textmultiline':
+      svgCanvas.setStarted(true)
+      const newTextMultiline = svgCanvas.addSVGElementsFromJson({
+        element: 'text',
+        curStyles: true,
+        attr: {
+          x,
+          y,
+          id: svgCanvas.getNextId(),
+          fill: svgCanvas.getCurText('fill'),
+          'stroke-width': svgCanvas.getCurText('stroke_width'),
+          'font-size': svgCanvas.getCurText('font_size'),
+          'font-family': svgCanvas.getCurText('font_family'),
+          'text-anchor': 'start',
+          'xml:space': 'preserve',
+          opacity: svgCanvas.getCurShape().opacity
+        }
+      })
+      
+      // Añadir tspan inicial para multilínea
+      const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan')
+      tspan.setAttribute('x', x)
+      tspan.setAttribute('dy', '0')
+      tspan.textContent = 'Texto multilínea'
+      newTextMultiline.appendChild(tspan)
+      
+      // Marcar como texto multilínea
+      newTextMultiline.setAttribute('data-multiline', 'true')
+      break
     default:
       // A mode can be defined by an extenstion
       break
@@ -774,9 +803,53 @@ const mouseUpEvent = (evt) => {
       }
       break
     case 'text':
-      keep = true
-      svgCanvas.selectOnly([element])
-      svgCanvas.textActions.start(element)
+      svgCanvas.setStarted(true)
+      /* const newText = */ svgCanvas.addSVGElementsFromJson({
+        element: 'text',
+        curStyles: true,
+        attr: {
+          x,
+          y,
+          id: svgCanvas.getNextId(),
+          fill: svgCanvas.getCurText('fill'),
+          'stroke-width': svgCanvas.getCurText('stroke_width'),
+          'font-size': svgCanvas.getCurText('font_size'),
+          'font-family': svgCanvas.getCurText('font_family'),
+          'text-anchor': 'middle',
+          'xml:space': 'preserve',
+          opacity: svgCanvas.getCurShape().opacity
+        }
+      })
+      // newText.textContent = 'text';
+      break
+    case 'textmultiline':
+      svgCanvas.setStarted(true)
+      const newTextMultiline = svgCanvas.addSVGElementsFromJson({
+        element: 'text',
+        curStyles: true,
+        attr: {
+          x,
+          y,
+          id: svgCanvas.getNextId(),
+          fill: svgCanvas.getCurText('fill'),
+          'stroke-width': svgCanvas.getCurText('stroke_width'),
+          'font-size': svgCanvas.getCurText('font_size'),
+          'font-family': svgCanvas.getCurText('font_family'),
+          'text-anchor': 'start',
+          'xml:space': 'preserve',
+          opacity: svgCanvas.getCurShape().opacity
+        }
+      })
+      
+      // Añadir tspan inicial para multilínea
+      const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan')
+      tspan.setAttribute('x', x)
+      tspan.setAttribute('dy', '0')
+      tspan.textContent = 'Texto multilínea'
+      newTextMultiline.appendChild(tspan)
+      
+      // Marcar como texto multilínea
+      newTextMultiline.setAttribute('data-multiline', 'true')
       break
     case 'path': {
       // set element to null here so that it is not removed nor finalized
@@ -923,7 +996,15 @@ const dblClickEvent = (evt) => {
 
   if (tagName === 'text' && svgCanvas.getCurrentMode() !== 'textedit') {
     const pt = transformPoint(evt.clientX, evt.clientY, svgCanvas.getrootSctm())
-    svgCanvas.textActions.select(mouseTarget, pt.x, pt.y)
+    
+    // Verificar si es texto multilínea
+    if (mouseTarget.getAttribute('data-multiline') === 'true') {
+      // Manejar texto multilínea con un editor especial
+      svgCanvas.textActions.selectMultiline(mouseTarget, pt.x, pt.y)
+    } else {
+      // Texto normal
+      svgCanvas.textActions.select(mouseTarget, pt.x, pt.y)
+    }
   }
 
   // Do nothing if already in current group
@@ -1279,6 +1360,35 @@ const mouseDownEvent = (evt) => {
         }
       })
       // newText.textContent = 'text';
+      break
+    case 'textmultiline':
+      svgCanvas.setStarted(true)
+      const newTextMultiline = svgCanvas.addSVGElementsFromJson({
+        element: 'text',
+        curStyles: true,
+        attr: {
+          x,
+          y,
+          id: svgCanvas.getNextId(),
+          fill: svgCanvas.getCurText('fill'),
+          'stroke-width': svgCanvas.getCurText('stroke_width'),
+          'font-size': svgCanvas.getCurText('font_size'),
+          'font-family': svgCanvas.getCurText('font_family'),
+          'text-anchor': 'start',
+          'xml:space': 'preserve',
+          opacity: curShape.opacity
+        }
+      })
+      
+      // Añadir tspan inicial para multilínea
+      const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan')
+      tspan.setAttribute('x', x)
+      tspan.setAttribute('dy', '0')
+      tspan.textContent = 'Texto multilínea'
+      newTextMultiline.appendChild(tspan)
+      
+      // Marcar como texto multilínea
+      newTextMultiline.setAttribute('data-multiline', 'true')
       break
     case 'path':
     // Fall through

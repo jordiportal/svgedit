@@ -767,6 +767,10 @@ class EditorStartup {
         // #TODO: Cursor should be changed back to default after text element was created
         cs = 'text'
         break
+      case 'textmultiline':
+        // #TODO: Cursor should be changed back to default after text element was created  
+        cs = 'text'
+        break
       default:
         cs = 'auto'
     }

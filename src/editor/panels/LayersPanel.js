@@ -71,14 +71,195 @@ class LayersPanel {
     $click($id('sidepanel_handle'), () => this.toggleSidePanel())
     this.toggleSidePanel(this.editor.configObj.curConfig.showlayers)
     
-    // Escuchar cambios en el canvas usando bind() método correcto
+    // Inicializar estado de expansión
+    this.expandedLayers = new Set()
+    this.expandedGroups = new Set()
+    this.lastContentHash = null
+    
+    // Escuchar múltiples eventos del canvas para asegurar actualizaciones
     this.editor.svgCanvas.bind('selected', () => {
+      // Solo actualizar selección, no todo el árbol
       setTimeout(() => this.updateSelection(), 10)
     })
     
     this.editor.svgCanvas.bind('changed', () => {
+      setTimeout(() => this.smartUpdate(), 50)
+    })
+    
+    // Escuchar cuando se cambian las capas
+    this.editor.svgCanvas.bind('layersChanged', () => {
       setTimeout(() => this.populateLayers(), 10)
     })
+    
+    // Configurar MutationObserver para detectar cambios en el SVG
+    this.setupMutationObserver()
+  }
+
+  /**
+   * Actualización inteligente que solo actualiza si hay cambios reales
+   */
+  smartUpdate () {
+    const newContentHash = this.getContentHash()
+    
+    // Solo actualizar si realmente hay cambios en el contenido
+    if (newContentHash !== this.lastContentHash) {
+      this.lastContentHash = newContentHash
+      this.populateLayers()
+    }
+  }
+
+  /**
+   * Genera un hash del contenido actual para detectar cambios reales
+   */
+  getContentHash () {
+    const drawing = this.editor.svgCanvas.getCurrentDrawing()
+    const numLayers = drawing.getNumLayers()
+    let hash = `layers:${numLayers}`
+    
+    for (let i = 0; i < numLayers; i++) {
+      const layerName = drawing.getLayerName(i)
+      const layerGroup = drawing.getLayerByName(layerName)
+      const elements = this.getLayerElements(layerGroup)
+      
+      hash += `;layer:${layerName}:${elements.length}`
+      elements.forEach(el => {
+        hash += `:${el.tagName}:${el.id || 'noId'}`
+        if (el.tagName === 'g') {
+          const groupElements = this.getGroupElements(el)
+          hash += `(${groupElements.length})`
+        }
+      })
+    }
+    
+    return hash
+  }
+
+  /**
+   * Guarda el estado actual de expansión antes de actualizar
+   */
+  saveExpansionState () {
+    this.expandedLayers.clear()
+    this.expandedGroups.clear()
+    
+    // Guardar capas expandidas
+    const layerHeaders = document.querySelectorAll('.layer-header')
+    layerHeaders.forEach(header => {
+      const toggle = header.querySelector('.layer-toggle')
+      const layerName = header.querySelector('.layer-name')?.textContent
+      
+      if (toggle && toggle.classList.contains('expanded') && layerName) {
+        this.expandedLayers.add(layerName)
+      }
+    })
+    
+    // Guardar grupos expandidos
+    const groupChildren = document.querySelectorAll('.group-children[data-group-id]')
+    groupChildren.forEach(container => {
+      const groupId = container.getAttribute('data-group-id')
+      if (groupId) {
+        this.expandedGroups.add(groupId)
+      }
+    })
+  }
+
+  /**
+   * Restaura el estado de expansión después de actualizar
+   */
+  restoreExpansionState () {
+    // Restaurar capas expandidas
+    this.expandedLayers.forEach(layerName => {
+      const layerHeaders = document.querySelectorAll('.layer-header')
+      layerHeaders.forEach(header => {
+        const nameElement = header.querySelector('.layer-name')
+        if (nameElement && nameElement.textContent === layerName) {
+          const toggle = header.querySelector('.layer-toggle')
+          const container = header.closest('.layer-item')?.querySelector('.layer-elements')
+          
+          if (toggle && container) {
+            toggle.classList.remove('collapsed')
+            toggle.classList.add('expanded')
+            container.classList.add('expanded')
+          }
+        }
+      })
+    })
+    
+    // Restaurar grupos expandidos
+    this.expandedGroups.forEach(groupId => {
+      const groupElement = document.querySelector(`[data-element-id="${groupId}"]`)
+      if (groupElement) {
+        const toggle = groupElement.querySelector('.element-toggle')
+        if (toggle) {
+          // Simular click en el toggle para expandir
+          setTimeout(() => {
+            const element = this.editor.svgCanvas.getElementById(groupId)
+            if (element) {
+              this.toggleGroupExpansion(element, groupElement, toggle)
+            }
+          }, 10)
+        }
+      }
+    })
+  }
+
+  /**
+   * Configura un MutationObserver para detectar cambios en el SVG
+   */
+  setupMutationObserver () {
+    const svgContent = this.editor.svgCanvas.getSvgContent()
+    if (!svgContent) return
+    
+    // Crear el observer con throttling más conservador
+    let updateTimeout = null
+    
+    this.mutationObserver = new MutationObserver((mutations) => {
+      let shouldUpdate = false
+      
+      mutations.forEach((mutation) => {
+        // Solo detectar cambios realmente significativos
+        if (mutation.type === 'childList') {
+          const addedNodes = Array.from(mutation.addedNodes)
+          const removedNodes = Array.from(mutation.removedNodes)
+          
+          const hasRelevantChanges = [...addedNodes, ...removedNodes].some(node => {
+            return node.nodeType === Node.ELEMENT_NODE && 
+                   node.tagName !== 'title' && 
+                   node.tagName !== 'desc' &&
+                   node.tagName !== 'defs' &&
+                   !node.classList?.contains('selector') &&
+                   !node.id?.includes('selector') &&
+                   !node.id?.includes('SvgjsPathAnimExtension')
+          })
+          
+          if (hasRelevantChanges) {
+            shouldUpdate = true
+          }
+        }
+      })
+      
+      if (shouldUpdate) {
+        // Throttle más conservador para evitar actualizaciones excesivas
+        if (updateTimeout) clearTimeout(updateTimeout)
+        updateTimeout = setTimeout(() => {
+          this.smartUpdate()
+        }, 200)
+      }
+    })
+    
+    // Observar solo cambios en children, no en atributos
+    this.mutationObserver.observe(svgContent, {
+      childList: true,
+      subtree: true
+    })
+  }
+
+  /**
+   * Limpia los observers cuando se destruye el panel
+   */
+  destroy () {
+    if (this.mutationObserver) {
+      this.mutationObserver.disconnect()
+    }
   }
 
   toggleSidePanel (displayFlag) {
@@ -263,6 +444,12 @@ class LayersPanel {
     const self = this
     const treeContainer = $id('layer-tree')
     
+    // Registrar tiempo de actualización
+    this.lastUpdateTime = Date.now()
+    
+    // Guardar estado de expansión antes de limpiar
+    this.saveExpansionState()
+    
     // Limpiar contenido anterior
     while (treeContainer.firstChild) { 
       treeContainer.removeChild(treeContainer.firstChild) 
@@ -295,6 +482,11 @@ class LayersPanel {
     
     $id('selLayerNames').setAttribute('options', text)
     $id('selLayerNames').setAttribute('values', values)
+    
+    // Restaurar estado de expansión después de repoblar
+    setTimeout(() => {
+      this.restoreExpansionState()
+    }, 20)
     
     // Ejecutar extensión cuando se pobla el panel de capas
     this.editor.svgCanvas.runExtensions('layersChanged')
@@ -447,11 +639,15 @@ class LayersPanel {
     
     // Si es texto, mostrar contenido
     if (element.tagName === 'text') {
-      const textContent = element.textContent || ''
-      if (textContent.length > 20) {
-        elementText += ` "${textContent.substring(0, 17)}..."`
+      const textContent = element.textContent.trim()
+      if (element.getAttribute('data-multiline') === 'true') {
+        const lines = element.querySelectorAll('tspan').length
+        elementText = `Texto multilínea (${lines} líneas)`
       } else if (textContent) {
-        elementText += ` "${textContent}"`
+        const truncatedText = textContent.length > 20 ? textContent.substring(0, 20) + '...' : textContent
+        elementText = `"${truncatedText}"`
+      } else {
+        elementText = 'Sin texto'
       }
     }
     
@@ -567,9 +763,16 @@ class LayersPanel {
         return `L=${Math.round(length)}`
       
       case 'text':
-        const fontSize = element.getAttribute('font-size') || 
-                        element.style.fontSize || '12'
-        return `${fontSize}px`
+        const textContent = element.textContent.trim()
+        if (element.getAttribute('data-multiline') === 'true') {
+          const lines = element.querySelectorAll('tspan').length
+          return `Texto multilínea (${lines} líneas)`
+        } else if (textContent) {
+          const truncatedText = textContent.length > 20 ? textContent.substring(0, 20) + '...' : textContent
+          return `"${truncatedText}"`
+        } else {
+          return 'Sin texto'
+        }
       
       case 'image':
         const imgWidth = element.getAttribute('width') || 0
@@ -592,15 +795,27 @@ class LayersPanel {
    */
   toggleLayerExpansion (toggle, container) {
     const isCollapsed = toggle.classList.contains('collapsed')
+    const layerHeader = toggle.closest('.layer-header')
+    const layerName = layerHeader?.querySelector('.layer-name')?.textContent
     
     if (isCollapsed) {
       toggle.classList.remove('collapsed')
       toggle.classList.add('expanded')
       container.classList.add('expanded')
+      
+      // Guardar estado expandido
+      if (layerName) {
+        this.expandedLayers.add(layerName)
+      }
     } else {
       toggle.classList.remove('expanded')
       toggle.classList.add('collapsed')
       container.classList.remove('expanded')
+      
+      // Remover del estado expandido
+      if (layerName) {
+        this.expandedLayers.delete(layerName)
+      }
     }
   }
 
@@ -722,12 +937,18 @@ class LayersPanel {
    */
   toggleGroupExpansion (groupElement, groupItem, toggle) {
     const isCollapsed = toggle.classList.contains('collapsed')
+    const groupId = groupElement.id
     
     if (isCollapsed) {
       // Expandir: mostrar elementos hijos
       toggle.classList.remove('collapsed')
       toggle.classList.add('expanded')
       toggle.innerHTML = '▼'
+      
+      // Guardar estado expandido
+      if (groupId) {
+        this.expandedGroups.add(groupId)
+      }
       
       // Crear contenedor de elementos hijos
       const childrenContainer = document.createElement('div')
@@ -762,6 +983,11 @@ class LayersPanel {
       toggle.classList.remove('expanded')
       toggle.classList.add('collapsed')
       toggle.innerHTML = '▶'
+      
+      // Remover del estado expandido
+      if (groupId) {
+        this.expandedGroups.delete(groupId)
+      }
       
       // Buscar y remover el contenedor de hijos
       const existingChildren = document.querySelector(`[data-group-id="${groupElement.id}"]`)
