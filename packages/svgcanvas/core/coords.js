@@ -174,57 +174,48 @@ export const remapElement = (selected, changes, m) => {
       break
     }
     case 'text': {
+      // if there are no tspan children, create them
+      if (selected.childNodes.length === 0) {
+        selected.textContent = 'a'
+      }
+
+      const tspanList = [...selected.childNodes].filter(child => child.tagName === 'tspan')
+      if (tspanList.length === 0) {
+        // Create a tspan element as a child if there are none
+        const tspan = document.createElementNS(NS.SVG, 'tspan')
+        tspan.appendChild(document.createTextNode('a'))
+        selected.appendChild(tspan)
+        tspanList.push(tspan)
+      }
+
       const pt = remap(changes.x, changes.y)
       changes.x = pt.x
       changes.y = pt.y
 
-      // Scale font-size
-      let fontSize = selected.getAttribute('font-size')
-      if (!fontSize) {
-        // If not directly set, try computed style
-        fontSize = window.getComputedStyle(selected).fontSize
-      }
-      const fontSizeNum = parseFloat(fontSize)
-      if (!isNaN(fontSizeNum)) {
-        // Assume uniform scaling and use m.a
-        changes['font-size'] = fontSizeNum * Math.abs(m.a)
+      // Update tspan elements as well
+      tspanList.forEach(tspan => {
+        if (tspan.getAttribute('x')) {
+          tspan.setAttribute('x', pt.x)
+        }
+        if (tspan.getAttribute('y')) {
+          tspan.setAttribute('y', pt.y)
+        }
+      })
+
+      // Si es texto multilínea, actualizar también el rectángulo de fondo
+      if (selected.getAttribute('data-multiline') === 'true') {
+        const textBoxRect = document.querySelector(`[data-text-box-bg="${selected.getAttribute('id')}"]`)
+        if (textBoxRect) {
+          const rectPt = remap(
+            parseFloat(textBoxRect.getAttribute('x')),
+            parseFloat(textBoxRect.getAttribute('y'))
+          )
+          textBoxRect.setAttribute('x', rectPt.x)
+          textBoxRect.setAttribute('y', rectPt.y)
+        }
       }
 
       finishUp()
-
-      // Handle child 'tspan' elements
-      const childNodes = selected.childNodes
-      for (let i = 0; i < childNodes.length; i++) {
-        const child = childNodes[i]
-        if (child.nodeType === 1 && child.tagName === 'tspan') {
-          const childChanges = {}
-          const hasX = child.hasAttribute('x')
-          const hasY = child.hasAttribute('y')
-          if (hasX) {
-            const childX = convertToNum('x', child.getAttribute('x'))
-            const childPtX = remap(childX, changes.y).x
-            childChanges.x = childPtX
-          }
-          if (hasY) {
-            const childY = convertToNum('y', child.getAttribute('y'))
-            const childPtY = remap(changes.x, childY).y
-            childChanges.y = childPtY
-          }
-
-          let tspanFS = child.getAttribute('font-size')
-          if (!tspanFS) {
-            tspanFS = window.getComputedStyle(child).fontSize
-          }
-          const tspanFSNum = parseFloat(tspanFS)
-          if (!isNaN(tspanFSNum)) {
-            childChanges['font-size'] = tspanFSNum * Math.abs(m.a)
-          }
-
-          if (hasX || hasY || childChanges['font-size']) {
-            assignAttributes(child, childChanges, 1000, true)
-          }
-        }
-      }
       break
     }
     case 'tspan': {

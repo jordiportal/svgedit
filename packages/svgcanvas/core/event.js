@@ -218,96 +218,188 @@ const mouseMoveEvent = (evt) => {
       break
     }
     case 'resize': {
-      // we track the resize bounding box and translate/scale the selected element
-      // while the mouse is down, when mouse goes up, we use this to recalculate
-      // the shape's coordinates
-      tlist = getTransformList(selected)
-      const hasMatrix = hasMatrixTransform(tlist)
-      box = hasMatrix ? svgCanvas.getInitBbox() : getBBox(selected)
-      let left = box.x
-      let top = box.y
-      let { width, height } = box
-      dx = (x - svgCanvas.getStartX())
-      dy = (y - svgCanvas.getStartY())
+      // Verificar si es texto multilínea y aplicar auto-justificación en lugar de escalado
+      if (selected.tagName === 'text' && selected.getAttribute('data-multiline') === 'true') {
+        // Aplicar auto-justificación para texto multilínea
+        const bbox = getBBox(selected)
+        const initialWidth = parseFloat(selected.getAttribute('data-text-box-width')) || bbox.width || 200
+        const initialHeight = parseFloat(selected.getAttribute('data-text-box-height')) || bbox.height || 100
 
-      if (svgCanvas.getCurConfig().gridSnapping) {
-        dx = snapToGrid(dx)
-        dy = snapToGrid(dy)
-        height = snapToGrid(height)
-        width = snapToGrid(width)
-      }
+        // Calcular nuevas dimensiones basadas en la posición absoluta del mouse
+        let newWidth = initialWidth
+        let newHeight = initialHeight
 
-      // if rotated, adjust the dx,dy values
-      angle = getRotationAngle(selected)
-      if (angle) {
-        const r = Math.sqrt(dx * dx + dy * dy)
-        const theta = Math.atan2(dy, dx) - angle * Math.PI / 180.0
-        dx = r * Math.cos(theta)
-        dy = r * Math.sin(theta)
-      }
+        const resizeMode = svgCanvas.getCurrentResizeMode()
 
-      // if not stretching in y direction, set dy to 0
-      // if not stretching in x direction, set dx to 0
-      if (!svgCanvas.getCurrentResizeMode().includes('n') && !svgCanvas.getCurrentResizeMode().includes('s')) {
-        dy = 0
-      }
-      if (!svgCanvas.getCurrentResizeMode().includes('e') && !svgCanvas.getCurrentResizeMode().includes('w')) {
-        dx = 0
-      }
+        // Calcular dimensiones basándose en el modo de redimensionamiento
+        if (resizeMode.includes('e')) {
+          // Redimensionando desde el borde derecho
+          newWidth = Math.max(50, x - bbox.x)
+        } else if (resizeMode.includes('w')) {
+          // Redimensionando desde el borde izquierdo
+          newWidth = Math.max(50, (bbox.x + initialWidth) - x)
+        }
 
-      let // ts = null,
-        tx = 0; let ty = 0
-      let sy = height ? (height + dy) / height : 1
-      let sx = width ? (width + dx) / width : 1
-      // if we are dragging on the north side, then adjust the scale factor and ty
-      if (svgCanvas.getCurrentResizeMode().includes('n')) {
-        sy = height ? (height - dy) / height : 1
-        ty = height
-      }
+        if (resizeMode.includes('s')) {
+          // Redimensionando desde el borde inferior
+          newHeight = Math.max(30, y - bbox.y)
+        } else if (resizeMode.includes('n')) {
+          // Redimensionando desde el borde superior
+          newHeight = Math.max(30, (bbox.y + initialHeight) - y)
+        }
 
-      // if we dragging on the east side, then adjust the scale factor and tx
-      if (svgCanvas.getCurrentResizeMode().includes('w')) {
-        sx = width ? (width - dx) / width : 1
-        tx = width
-      }
+        // Redimensionamiento diagonal (esquinas)
+        if (resizeMode.includes('se')) {
+          newWidth = Math.max(50, x - bbox.x)
+          newHeight = Math.max(30, y - bbox.y)
+        } else if (resizeMode.includes('sw')) {
+          newWidth = Math.max(50, (bbox.x + initialWidth) - x)
+          newHeight = Math.max(30, y - bbox.y)
+        } else if (resizeMode.includes('ne')) {
+          newWidth = Math.max(50, x - bbox.x)
+          newHeight = Math.max(30, (bbox.y + initialHeight) - y)
+        } else if (resizeMode.includes('nw')) {
+          newWidth = Math.max(50, (bbox.x + initialWidth) - x)
+          newHeight = Math.max(30, (bbox.y + initialHeight) - y)
+        }
 
-      // update the transform list with translate,scale,translate
-      const translateOrigin = svgRoot.createSVGTransform()
-      const scale = svgRoot.createSVGTransform()
-      const translateBack = svgRoot.createSVGTransform()
+        if (svgCanvas.getCurConfig().gridSnapping) {
+          newWidth = snapToGrid(newWidth)
+          newHeight = snapToGrid(newHeight)
+        }
 
-      if (svgCanvas.getCurConfig().gridSnapping) {
-        left = snapToGrid(left)
-        tx = snapToGrid(tx)
-        top = snapToGrid(top)
-        ty = snapToGrid(ty)
-      }
+        // Solo actualizar si hay cambios significativos
+        const currentWidth = parseFloat(selected.getAttribute('data-text-box-width')) || initialWidth
+        const currentHeight = parseFloat(selected.getAttribute('data-text-box-height')) || initialHeight
 
-      translateOrigin.setTranslate(-(left + tx), -(top + ty))
-      // For images, we maintain aspect ratio by default and relax when shift pressed
-      const maintainAspectRatio = (selected.tagName !== 'image' && evt.shiftKey) || (selected.tagName === 'image' && !evt.shiftKey)
-      if (maintainAspectRatio) {
-        if (sx === 1) {
-          sx = sy
-        } else { sy = sx }
-      }
-      scale.setScale(sx, sy)
+        if (Math.abs(newWidth - currentWidth) > 2 || Math.abs(newHeight - currentHeight) > 2) {
+          // Actualizar atributos de tamaño
+          selected.setAttribute('data-text-box-width', newWidth)
+          selected.setAttribute('data-text-box-height', newHeight)
 
-      translateBack.setTranslate(left + tx, top + ty)
-      if (hasMatrix) {
-        const diff = angle ? 1 : 0
-        tlist.replaceItem(translateOrigin, 2 + diff)
-        tlist.replaceItem(scale, 1 + diff)
-        tlist.replaceItem(translateBack, Number(diff))
+          // Actualizar rectángulo de fondo si existe
+          const textBoxRect = document.querySelector(`[data-text-box-bg="${selected.getAttribute('id')}"]`)
+          if (textBoxRect) {
+            textBoxRect.setAttribute('width', newWidth)
+            textBoxRect.setAttribute('height', newHeight)
+            
+            // Actualizar posición si es redimensionamiento desde bordes izquierdo o superior
+            if (resizeMode.includes('w')) {
+              const newX = (bbox.x + initialWidth) - newWidth
+              textBoxRect.setAttribute('x', newX)
+              selected.setAttribute('x', newX)
+              // Actualizar posición x de todos los tspan
+              const tspans = selected.querySelectorAll('tspan')
+              tspans.forEach(tspan => tspan.setAttribute('x', newX))
+            }
+            if (resizeMode.includes('n')) {
+              const newY = (bbox.y + initialHeight) - newHeight
+              textBoxRect.setAttribute('y', newY)
+              selected.setAttribute('y', newY)
+            }
+          }
+
+          // Throttling para auto-justificación (limitar a cada 50ms)
+          if (!selected._lastResizeTime || Date.now() - selected._lastResizeTime > 50) {
+            selected._lastResizeTime = Date.now()
+            // Aplicar auto-justificación en tiempo real
+            svgCanvas.textActions.applyAutoWrap(selected, newWidth, newHeight)
+          }
+
+          // Actualizar selector para mostrar el nuevo tamaño
+          svgCanvas.selectorManager.requestSelector(selected).resize()
+          svgCanvas.call('transition', selectedElements)
+        }
       } else {
-        const N = tlist.numberOfItems
-        tlist.replaceItem(translateBack, N - 3)
-        tlist.replaceItem(scale, N - 2)
-        tlist.replaceItem(translateOrigin, N - 1)
-      }
+        // Comportamiento normal de redimensionamiento para otros elementos
+        tlist = getTransformList(selected)
+        const hasMatrix = hasMatrixTransform(tlist)
+        box = hasMatrix ? svgCanvas.getInitBbox() : getBBox(selected)
+        let left = box.x
+        let top = box.y
+        let { width, height } = box
+        dx = (x - svgCanvas.getStartX())
+        dy = (y - svgCanvas.getStartY())
 
-      svgCanvas.selectorManager.requestSelector(selected).resize()
-      svgCanvas.call('transition', selectedElements)
+        if (svgCanvas.getCurConfig().gridSnapping) {
+          dx = snapToGrid(dx)
+          dy = snapToGrid(dy)
+          height = snapToGrid(height)
+          width = snapToGrid(width)
+        }
+
+        // if rotated, adjust the dx,dy values
+        angle = getRotationAngle(selected)
+        if (angle) {
+          const r = Math.sqrt(dx * dx + dy * dy)
+          const theta = Math.atan2(dy, dx) - angle * Math.PI / 180.0
+          dx = r * Math.cos(theta)
+          dy = r * Math.sin(theta)
+        }
+
+        // if not stretching in y direction, set dy to 0
+        // if not stretching in x direction, set dx to 0
+        if (!svgCanvas.getCurrentResizeMode().includes('n') && !svgCanvas.getCurrentResizeMode().includes('s')) {
+          dy = 0
+        }
+        if (!svgCanvas.getCurrentResizeMode().includes('e') && !svgCanvas.getCurrentResizeMode().includes('w')) {
+          dx = 0
+        }
+
+        let // ts = null,
+          tx = 0; let ty = 0
+        let sy = height ? (height + dy) / height : 1
+        let sx = width ? (width + dx) / width : 1
+        // if we are dragging on the north side, then adjust the scale factor and ty
+        if (svgCanvas.getCurrentResizeMode().includes('n')) {
+          sy = height ? (height - dy) / height : 1
+          ty = height
+        }
+
+        // if we dragging on the east side, then adjust the scale factor and tx
+        if (svgCanvas.getCurrentResizeMode().includes('w')) {
+          sx = width ? (width - dx) / width : 1
+          tx = width
+        }
+
+        // update the transform list with translate,scale,translate
+        const translateOrigin = svgRoot.createSVGTransform()
+        const scale = svgRoot.createSVGTransform()
+        const translateBack = svgRoot.createSVGTransform()
+
+        if (svgCanvas.getCurConfig().gridSnapping) {
+          left = snapToGrid(left)
+          tx = snapToGrid(tx)
+          top = snapToGrid(top)
+          ty = snapToGrid(ty)
+        }
+
+        translateOrigin.setTranslate(-(left + tx), -(top + ty))
+        // For images, we maintain aspect ratio by default and relax when shift pressed
+        const maintainAspectRatio = (selected.tagName !== 'image' && evt.shiftKey) || (selected.tagName === 'image' && !evt.shiftKey)
+        if (maintainAspectRatio) {
+          if (sx === 1) {
+            sx = sy
+          } else { sy = sx }
+        }
+        scale.setScale(sx, sy)
+
+        translateBack.setTranslate(left + tx, top + ty)
+        if (hasMatrix) {
+          const diff = angle ? 1 : 0
+          tlist.replaceItem(translateOrigin, 2 + diff)
+          tlist.replaceItem(scale, 1 + diff)
+          tlist.replaceItem(translateBack, Number(diff))
+        } else {
+          const N = tlist.numberOfItems
+          tlist.replaceItem(translateBack, N - 3)
+          tlist.replaceItem(scale, N - 2)
+          tlist.replaceItem(translateOrigin, N - 1)
+        }
+
+        svgCanvas.selectorManager.requestSelector(selected).resize()
+        svgCanvas.call('transition', selectedElements)
+      }
 
       break
     }
@@ -644,6 +736,19 @@ const mouseUpEvent = (evt) => {
           const len = selectedElements.length
           for (let i = 0; i < len; ++i) {
             if (!selectedElements[i]) { break }
+
+            // Si es texto multilínea y se estaba redimensionando, aplicar auto-justificación final
+            const elem = selectedElements[i]
+            if (elem.tagName === 'text' && elem.getAttribute('data-multiline') === 'true' && elem._lastResizeTime) {
+              const width = parseFloat(elem.getAttribute('data-text-box-width')) || 200
+              const height = parseFloat(elem.getAttribute('data-text-box-height')) || 100
+              svgCanvas.textActions.applyAutoWrap(elem, width, height)
+              // Limpiar el timestamp de redimensionamiento
+              delete elem._lastResizeTime
+              // Llamar 'changed' para finalizar la operación
+              svgCanvas.call('changed', [elem])
+            }
+
             svgCanvas.selectorManager.requestSelector(selectedElements[i]).resize()
           }
           // no change in position/size, so maybe we should move to pathedit
@@ -820,8 +925,27 @@ const mouseUpEvent = (evt) => {
       tspan.textContent = 'Texto multilínea'
       newTextMultiline.appendChild(tspan)
 
-      // Marcar como texto multilínea
+      // Marcar como texto multilínea con tamaño de caja por defecto
       newTextMultiline.setAttribute('data-multiline', 'true')
+      newTextMultiline.setAttribute('data-text-box-width', '200')
+      newTextMultiline.setAttribute('data-text-box-height', '100')
+      newTextMultiline.setAttribute('data-original-text', 'Texto multilínea')
+
+      // Crear rectángulo invisible de fondo para mantener las dimensiones
+      const textBoxRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
+      textBoxRect.setAttribute('x', x)
+      textBoxRect.setAttribute('y', y)
+      textBoxRect.setAttribute('width', '200')
+      textBoxRect.setAttribute('height', '100')
+      textBoxRect.setAttribute('fill', 'none')
+      textBoxRect.setAttribute('stroke', 'none')
+      textBoxRect.setAttribute('opacity', '0')
+      textBoxRect.setAttribute('pointer-events', 'none')
+      textBoxRect.setAttribute('data-text-box-bg', newTextMultiline.getAttribute('id'))
+
+      // Insertar el rectángulo antes del texto en el DOM
+      newTextMultiline.parentNode.insertBefore(textBoxRect, newTextMultiline)
+
       break
     }
     case 'path':

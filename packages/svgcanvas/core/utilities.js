@@ -527,6 +527,21 @@ export const getBBox = function (elem) {
   let ret = null
   switch (elname) {
     case 'text':
+      // Si es texto multilínea, usar el rectángulo de fondo para las dimensiones
+      if (selected.getAttribute('data-multiline') === 'true') {
+        const textBoxRect = document.querySelector(`[data-text-box-bg="${selected.getAttribute('id')}"]`)
+        if (textBoxRect) {
+          ret = {
+            x: parseFloat(textBoxRect.getAttribute('x')),
+            y: parseFloat(textBoxRect.getAttribute('y')),
+            width: parseFloat(textBoxRect.getAttribute('width')),
+            height: parseFloat(textBoxRect.getAttribute('height'))
+          }
+          break
+        }
+      }
+      
+      // Para texto normal, usar el comportamiento estándar
       if (selected.textContent === '') {
         selected.textContent = 'a' // Some character needed for the selector to use.
         ret = selected.getBBox()

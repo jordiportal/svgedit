@@ -186,6 +186,14 @@ export const textActionsMethod = (function () {
     if (chardata.length === 1) {
       return 0
     }
+
+    // Si es texto multilínea, no usar getCharNumAtPosition ya que no funciona con tspan
+    if (curtext.getAttribute('data-multiline') === 'true') {
+      // Para texto multilínea, simplemente retornamos 0 para evitar errores
+      // El usuario debe usar doble clic para editar
+      return 0
+    }
+
     // Determine if cursor should be on left or right of character
     let charpos = curtext.getCharNumAtPosition(pt)
     if (charpos < 0) {
@@ -470,6 +478,8 @@ export const textActionsMethod = (function () {
           z-index: 1000;
           min-width: 200px;
           min-height: 100px;
+          word-wrap: break-word;
+          overflow-wrap: break-word;
         `
         document.body.appendChild(multilineEditor)
       }
@@ -477,10 +487,24 @@ export const textActionsMethod = (function () {
       // Extraer texto de los tspan
       const tspans = curtext.querySelectorAll('tspan')
       let textValue = ''
-      tspans.forEach((tspan, index) => {
-        if (index > 0) textValue += '\n'
-        textValue += tspan.textContent
-      })
+
+      // Verificar si hay texto original almacenado
+      const storedText = curtext.getAttribute('data-original-text')
+      if (storedText) {
+        textValue = storedText
+      } else {
+        // Primera vez, extraer de tspans y almacenar
+        tspans.forEach((tspan, index) => {
+          // Extraer solo el texto visible (sin indicadores de overflow)
+          const content = tspan.textContent
+          if (!content.startsWith('+')) {
+            if (index > 0) textValue += '\n'
+            textValue += content
+          }
+        })
+        // Almacenar el texto original para futuras referencias
+        curtext.setAttribute('data-original-text', textValue)
+      }
 
       multilineEditor.value = textValue
 
@@ -492,10 +516,14 @@ export const textActionsMethod = (function () {
       const left = workareaRect.left + (bbox.x * zoom) + workarea.scrollLeft
       const top = workareaRect.top + (bbox.y * zoom) + workarea.scrollTop
 
+      // Usar tamaños almacenados o valores por defecto
+      const storedWidth = parseFloat(curtext.getAttribute('data-text-box-width')) || 200
+      const storedHeight = parseFloat(curtext.getAttribute('data-text-box-height')) || 100
+
       multilineEditor.style.left = `${left}px`
       multilineEditor.style.top = `${top}px`
-      multilineEditor.style.width = `${Math.max(200, bbox.width * zoom)}px`
-      multilineEditor.style.height = `${Math.max(100, bbox.height * zoom)}px`
+      multilineEditor.style.width = `${Math.max(200, storedWidth * zoom)}px`
+      multilineEditor.style.height = `${Math.max(100, storedHeight * zoom)}px`
 
       // Mostrar y enfocar
       multilineEditor.style.display = 'block'
@@ -504,26 +532,34 @@ export const textActionsMethod = (function () {
 
       // Manejar eventos
       const updateText = () => {
-        const lines = multilineEditor.value.split('\n')
+        const rawText = multilineEditor.value
 
-        // Limpiar tspans existentes
+        // Actualizar el texto original almacenado
+        curtext.setAttribute('data-original-text', rawText)
+
+        // Actualizar atributos de tamaño si el editor fue redimensionado
+        const editorRect = multilineEditor.getBoundingClientRect()
+        const zoom = svgCanvas.getZoom()
+        const newWidth = editorRect.width / zoom
+        const newHeight = editorRect.height / zoom
+
+        curtext.setAttribute('data-text-box-width', newWidth)
+        curtext.setAttribute('data-text-box-height', newHeight)
+
+        // Añadir texto actual a los tspan para que applyAutoWrap pueda procesarlo
         while (curtext.firstChild) {
           curtext.removeChild(curtext.firstChild)
         }
 
-        // Añadir nuevos tspans
-        const fontSize = parseFloat(curtext.getAttribute('font-size') || 16)
-        const lineHeight = fontSize * 1.2
+        // Crear tspan temporal con el texto del editor
+        const tempTspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan')
+        tempTspan.setAttribute('x', curtext.getAttribute('x') || 0)
+        tempTspan.setAttribute('dy', '0')
+        tempTspan.textContent = rawText
+        curtext.appendChild(tempTspan)
 
-        lines.forEach((line, index) => {
-          const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan')
-          tspan.setAttribute('x', curtext.getAttribute('x') || 0)
-          tspan.setAttribute('dy', index === 0 ? '0' : lineHeight)
-          tspan.textContent = line || ' ' // Espacio en blanco para líneas vacías
-          curtext.appendChild(tspan)
-        })
-
-        svgCanvas.call('changed', [curtext])
+        // Aplicar auto-justificación usando la función applyAutoWrap
+        svgCanvas.textActions.applyAutoWrap(curtext, newWidth, newHeight)
       }
 
       const hideEditor = () => {
@@ -539,6 +575,11 @@ export const textActionsMethod = (function () {
           hideEditor()
           e.preventDefault()
         }
+      }
+
+      // Auto-actualizar mientras se escribe
+      multilineEditor.oninput = () => {
+        updateText()
       }
 
       setTimeout(function () {
@@ -671,6 +712,154 @@ export const textActionsMethod = (function () {
         width: 0
       })
       setSelection(textinput.selectionStart, textinput.selectionEnd, true)
+    },
+    /**
+     * Aplica auto-justificación al texto multilínea (optimizada para tiempo real)
+     * @param {Element} textElement
+     * @param {Float} maxWidth
+     * @param {Float} maxHeight
+     * @returns {void}
+     */
+    applyAutoWrap (textElement, maxWidth, maxHeight) {
+      // Función auxiliar para medir texto (cache para optimización)
+      if (!this._measureCanvas) {
+        this._measureCanvas = document.createElement('canvas')
+        this._measureContext = this._measureCanvas.getContext('2d')
+      }
+
+      const measureTextWidth = (text, font) => {
+        this._measureContext.font = font
+        return this._measureContext.measureText(text).width
+      }
+
+      // Función para aplicar auto-justificación
+      const autoWrapText = (text, maxWidth) => {
+        const fontSize = parseFloat(textElement.getAttribute('font-size') || 16)
+        const fontFamily = textElement.getAttribute('font-family') || 'Arial'
+        const font = `${fontSize}px ${fontFamily}`
+
+        const words = text.split(' ')
+        const lines = []
+        let currentLine = ''
+
+        for (const word of words) {
+          const testLine = currentLine ? `${currentLine} ${word}` : word
+          const testWidth = measureTextWidth(testLine, font)
+
+          if (testWidth <= maxWidth || !currentLine) {
+            currentLine = testLine
+          } else {
+            if (currentLine) {
+              lines.push(currentLine)
+              currentLine = word
+            } else {
+              // Palabra muy larga, añadirla como está
+              lines.push(word)
+              currentLine = ''
+            }
+          }
+        }
+
+        if (currentLine) {
+          lines.push(currentLine)
+        }
+
+        return lines
+      }
+
+      // Función para detectar overflow vertical
+      const checkVerticalOverflow = (lines, maxHeight) => {
+        const fontSize = parseFloat(textElement.getAttribute('font-size') || 16)
+        const lineHeight = fontSize * 1.2
+        const totalHeight = lines.length * lineHeight
+
+        return {
+          hasOverflow: totalHeight > maxHeight,
+          visibleLines: Math.floor(maxHeight / lineHeight),
+          totalLines: lines.length
+        }
+      }
+
+      // Extraer texto actual de los tspan
+      let rawText = ''
+
+      // Verificar si hay texto original almacenado
+      const storedText = textElement.getAttribute('data-original-text')
+      if (storedText) {
+        rawText = storedText
+      } else {
+        // Primera vez, extraer de tspans y almacenar
+        const tspans = textElement.querySelectorAll('tspan')
+        tspans.forEach((tspan, index) => {
+          // Extraer solo el texto visible (sin indicadores de overflow)
+          const content = tspan.textContent
+          if (!content.startsWith('+')) {
+            if (index > 0) rawText += '\n'
+            rawText += content
+          }
+        })
+        // Almacenar el texto original para futuras referencias
+        textElement.setAttribute('data-original-text', rawText)
+      }
+
+      // Si no hay texto, salir
+      if (!rawText.trim()) return
+
+      // Procesar cada párrafo por separado
+      const paragraphs = rawText.split('\n')
+      let allLines = []
+
+      paragraphs.forEach((paragraph) => {
+        if (paragraph.trim() === '') {
+          allLines.push(' ') // Línea vacía
+        } else {
+          const wrappedLines = autoWrapText(paragraph, maxWidth)
+          allLines = allLines.concat(wrappedLines)
+        }
+      })
+
+      // Verificar overflow vertical
+      const overflowInfo = checkVerticalOverflow(allLines, maxHeight)
+
+      // Limpiar tspans existentes de forma eficiente
+      while (textElement.firstChild) {
+        textElement.removeChild(textElement.firstChild)
+      }
+
+      // Añadir tspans visibles
+      const fontSize = parseFloat(textElement.getAttribute('font-size') || 16)
+      const lineHeight = fontSize * 1.2
+      const visibleLines = overflowInfo.hasOverflow ? overflowInfo.visibleLines - 1 : allLines.length
+
+      // Crear fragmento para operaciones eficientes
+      const fragment = document.createDocumentFragment()
+
+      for (let i = 0; i < visibleLines; i++) {
+        const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan')
+        tspan.setAttribute('x', textElement.getAttribute('x') || 0)
+        tspan.setAttribute('dy', i === 0 ? '0' : lineHeight)
+        tspan.textContent = allLines[i] || ' '
+        fragment.appendChild(tspan)
+      }
+
+      // Añadir indicador de overflow si es necesario
+      if (overflowInfo.hasOverflow) {
+        const overflowTspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan')
+        overflowTspan.setAttribute('x', textElement.getAttribute('x') || 0)
+        overflowTspan.setAttribute('dy', lineHeight)
+        overflowTspan.setAttribute('fill', '#ff6600')
+        overflowTspan.setAttribute('font-weight', 'bold')
+        overflowTspan.textContent = `+${overflowInfo.totalLines - visibleLines}`
+        fragment.appendChild(overflowTspan)
+      }
+
+      // Añadir todo de una vez para mejor rendimiento
+      textElement.appendChild(fragment)
+
+      // Solo llamar 'changed' si no estamos en modo de redimensionamiento activo
+      if (svgCanvas.getCurrentMode() !== 'resize') {
+        svgCanvas.call('changed', [textElement])
+      }
     }
   }
 })()
