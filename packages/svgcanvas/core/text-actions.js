@@ -449,11 +449,11 @@ export const textActionsMethod = (function () {
       allowDbl = false
       svgCanvas.setCurrentMode('textedit')
       svgCanvas.selectorManager.requestSelector(curtext).showGrips(false)
-      
+
       // Crear textarea para edición multilínea
       const bbox = curtext.getBBox()
       let multilineEditor = document.getElementById('multiline_text_editor')
-      
+
       if (!multilineEditor) {
         multilineEditor = document.createElement('textarea')
         multilineEditor.id = 'multiline_text_editor'
@@ -473,7 +473,7 @@ export const textActionsMethod = (function () {
         `
         document.body.appendChild(multilineEditor)
       }
-      
+
       // Extraer texto de los tspan
       const tspans = curtext.querySelectorAll('tspan')
       let textValue = ''
@@ -481,41 +481,40 @@ export const textActionsMethod = (function () {
         if (index > 0) textValue += '\n'
         textValue += tspan.textContent
       })
-      
+
       multilineEditor.value = textValue
-      
+
       // Posicionar el editor
-      const canvasRect = svgCanvas.getContentElem().getBoundingClientRect()
       const workarea = document.getElementById('workarea')
       const workareaRect = workarea.getBoundingClientRect()
-      
+
       const zoom = svgCanvas.getZoom()
       const left = workareaRect.left + (bbox.x * zoom) + workarea.scrollLeft
       const top = workareaRect.top + (bbox.y * zoom) + workarea.scrollTop
-      
+
       multilineEditor.style.left = `${left}px`
       multilineEditor.style.top = `${top}px`
       multilineEditor.style.width = `${Math.max(200, bbox.width * zoom)}px`
       multilineEditor.style.height = `${Math.max(100, bbox.height * zoom)}px`
-      
+
       // Mostrar y enfocar
       multilineEditor.style.display = 'block'
       multilineEditor.focus()
       multilineEditor.select()
-      
+
       // Manejar eventos
       const updateText = () => {
         const lines = multilineEditor.value.split('\n')
-        
+
         // Limpiar tspans existentes
         while (curtext.firstChild) {
           curtext.removeChild(curtext.firstChild)
         }
-        
+
         // Añadir nuevos tspans
         const fontSize = parseFloat(curtext.getAttribute('font-size') || 16)
         const lineHeight = fontSize * 1.2
-        
+
         lines.forEach((line, index) => {
           const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan')
           tspan.setAttribute('x', curtext.getAttribute('x') || 0)
@@ -523,16 +522,16 @@ export const textActionsMethod = (function () {
           tspan.textContent = line || ' ' // Espacio en blanco para líneas vacías
           curtext.appendChild(tspan)
         })
-        
+
         svgCanvas.call('changed', [curtext])
       }
-      
+
       const hideEditor = () => {
         updateText()
         multilineEditor.style.display = 'none'
         svgCanvas.textActions.toSelectMode(true)
       }
-      
+
       // Eventos del editor
       multilineEditor.onblur = hideEditor
       multilineEditor.onkeydown = (e) => {
@@ -541,7 +540,7 @@ export const textActionsMethod = (function () {
           e.preventDefault()
         }
       }
-      
+
       setTimeout(function () {
         allowDbl = true
       }, 300)
