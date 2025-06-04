@@ -7,7 +7,7 @@
 
 import { jsPDF as JsPDF } from 'jspdf'
 import 'svg2pdf.js'
-import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
+
 import * as history from './history.js'
 import {
   text2xml,
@@ -1045,6 +1045,10 @@ const exportAdvancedPDF = async (
   } = options
 
   try {
+    // Importación dinámica de pdf-lib
+    const pdfLibModule = await import('pdf-lib')
+    const { PDFDocument, rgb, StandardFonts } = pdfLibModule
+    
     const res = svgCanvas.getResolution()
     const svgElement = svgCanvas.getSvgContent().cloneNode(true)
 
@@ -1061,10 +1065,10 @@ const exportAdvancedPDF = async (
 
     if (preserveLayers) {
       // Exportación con capas preservadas
-      await exportWithLayers(pdfDoc, page, svgElement, res, vectorMode, embedFonts)
+      await exportWithLayers(pdfDoc, page, svgElement, res, vectorMode, embedFonts, pdfLibModule)
     } else {
       // Exportación estándar mejorada
-      await exportStandardAdvanced(pdfDoc, page, svgElement, res, vectorMode, embedFonts)
+      await exportStandardAdvanced(pdfDoc, page, svgElement, res, vectorMode, embedFonts, pdfLibModule)
     }
 
     // Serializar PDF
@@ -1110,7 +1114,7 @@ const exportAdvancedPDF = async (
 /**
  * Exporta con capas preservadas como OCG (Optional Content Groups)
  */
-async function exportWithLayers(pdfDoc, page, svgElement, resolution, vectorMode, embedFonts) {
+async function exportWithLayers(pdfDoc, page, svgElement, resolution, vectorMode, embedFonts, pdfLibModule) {
   const layers = getLayersFromSVG(svgElement)
   
   for (const layer of layers) {
@@ -1123,26 +1127,26 @@ async function exportWithLayers(pdfDoc, page, svgElement, resolution, vectorMode
     )
     
     // Renderizar elementos de la capa
-    await renderLayerElements(pdfDoc, page, layer.elements, ocg, resolution, vectorMode, embedFonts)
+    await renderLayerElements(pdfDoc, page, layer.elements, ocg, resolution, vectorMode, embedFonts, pdfLibModule)
   }
 }
 
 /**
  * Exportación estándar mejorada sin capas separadas
  */
-async function exportStandardAdvanced(pdfDoc, page, svgElement, resolution, vectorMode, embedFonts) {
+async function exportStandardAdvanced(pdfDoc, page, svgElement, resolution, vectorMode, embedFonts, pdfLibModule) {
   const allElements = [...svgElement.querySelectorAll('*')]
   
   switch (vectorMode) {
     case 'pure':
-      await renderSVGElementsAsVectors(pdfDoc, page, svgElement, resolution, embedFonts)
+      await renderSVGElementsAsVectors(pdfDoc, page, svgElement, resolution, embedFonts, pdfLibModule)
       break
     case 'hybrid':
-      await renderSVGElementsHybrid(pdfDoc, page, svgElement, resolution, embedFonts)
+      await renderSVGElementsHybrid(pdfDoc, page, svgElement, resolution, embedFonts, pdfLibModule)
       break
     case 'raster':
     default:
-      await renderSVGElementsAsRaster(pdfDoc, page, svgElement, resolution)
+      await renderSVGElementsAsRaster(pdfDoc, page, svgElement, resolution, pdfLibModule)
       break
   }
 }
@@ -1179,34 +1183,34 @@ function getLayersFromSVG(svgElement) {
 /**
  * Renderiza elementos de una capa específica
  */
-async function renderLayerElements(pdfDoc, page, elements, ocg, resolution, vectorMode, embedFonts) {
+async function renderLayerElements(pdfDoc, page, elements, ocg, resolution, vectorMode, embedFonts, pdfLibModule) {
   for (const element of elements) {
-    await renderSVGElement(pdfDoc, page, element, resolution, vectorMode, embedFonts)
+    await renderSVGElement(pdfDoc, page, element, resolution, vectorMode, embedFonts, pdfLibModule)
   }
 }
 
 /**
  * Renderiza elementos SVG como vectores puros
  */
-async function renderSVGElementsAsVectors(pdfDoc, page, svgElement, resolution, embedFonts) {
+async function renderSVGElementsAsVectors(pdfDoc, page, svgElement, resolution, embedFonts, pdfLibModule) {
   const elements = [...svgElement.querySelectorAll('rect, circle, ellipse, line, polyline, polygon, path, text, image')]
   
   for (const element of elements) {
-    await renderSVGElement(pdfDoc, page, element, resolution, 'pure', embedFonts)
+    await renderSVGElement(pdfDoc, page, element, resolution, 'pure', embedFonts, pdfLibModule)
   }
 }
 
 /**
  * Renderiza elementos SVG en modo híbrido (vectores + rasterizado selectivo)
  */
-async function renderSVGElementsHybrid(pdfDoc, page, svgElement, resolution, embedFonts) {
+async function renderSVGElementsHybrid(pdfDoc, page, svgElement, resolution, embedFonts, pdfLibModule) {
   const vectorElements = ['rect', 'circle', 'ellipse', 'line', 'text']
   const rasterElements = ['path', 'polyline', 'polygon']
   
   // Renderizar elementos simples como vectores
   const simpleElements = svgElement.querySelectorAll(vectorElements.join(','))
   for (const element of simpleElements) {
-    await renderSVGElement(pdfDoc, page, element, resolution, 'pure', embedFonts)
+    await renderSVGElement(pdfDoc, page, element, resolution, 'pure', embedFonts, pdfLibModule)
   }
   
   // Renderizar elementos complejos como raster
@@ -1215,43 +1219,43 @@ async function renderSVGElementsHybrid(pdfDoc, page, svgElement, resolution, emb
     const tempSvg = svgElement.cloneNode(true)
     // Eliminar elementos simples del SVG temporal
     tempSvg.querySelectorAll(vectorElements.join(',')).forEach(el => el.remove())
-    await renderSVGElementsAsRaster(pdfDoc, page, tempSvg, resolution)
+    await renderSVGElementsAsRaster(pdfDoc, page, tempSvg, resolution, pdfLibModule)
   }
 }
 
 /**
  * Renderiza un elemento SVG individual
  */
-async function renderSVGElement(pdfDoc, page, element, resolution, mode, embedFonts) {
+async function renderSVGElement(pdfDoc, page, element, resolution, mode, embedFonts, pdfLibModule) {
   const tagName = element.tagName.toLowerCase()
   
   switch (tagName) {
     case 'rect':
-      await renderRect(page, element, resolution)
+      await renderRect(page, element, resolution, pdfLibModule)
       break
     case 'circle':
-      await renderCircle(page, element, resolution)
+      await renderCircle(page, element, resolution, pdfLibModule)
       break
     case 'ellipse':
-      await renderEllipse(page, element, resolution)
+      await renderEllipse(page, element, resolution, pdfLibModule)
       break
     case 'line':
-      await renderLine(page, element, resolution)
+      await renderLine(page, element, resolution, pdfLibModule)
       break
     case 'polyline':
-      await renderPolyline(page, element, resolution)
+      await renderPolyline(page, element, resolution, pdfLibModule)
       break
     case 'polygon':
-      await renderPolyline(page, element, resolution) // Usar misma lógica
+      await renderPolyline(page, element, resolution, pdfLibModule) // Usar misma lógica
       break
     case 'path':
-      await renderPath(page, element, resolution)
+      await renderPath(page, element, resolution, pdfLibModule)
       break
     case 'text':
-      await renderText(pdfDoc, page, element, resolution, embedFonts)
+      await renderText(pdfDoc, page, element, resolution, embedFonts, pdfLibModule)
       break
     case 'image':
-      await renderImage(pdfDoc, page, element, resolution)
+      await renderImage(pdfDoc, page, element, resolution, pdfLibModule)
       break
     default:
       // Para elementos no soportados, renderizar como raster
@@ -1265,7 +1269,7 @@ async function renderSVGElement(pdfDoc, page, element, resolution, mode, embedFo
 /**
  * Renderiza un rectángulo SVG
  */
-async function renderRect(page, element, resolution) {
+async function renderRect(page, element, resolution, pdfLibModule) {
   const x = parseFloat(element.getAttribute('x') || 0)
   const y = parseFloat(element.getAttribute('y') || 0)
   const width = parseFloat(element.getAttribute('width') || 0)
@@ -1276,8 +1280,8 @@ async function renderRect(page, element, resolution) {
   
   if (width <= 0 || height <= 0) return
   
-  const fillColor = parseSVGColor(fill)
-  const strokeColor = parseSVGColor(stroke)
+  const fillColor = parseSVGColor(fill, pdfLibModule)
+  const strokeColor = parseSVGColor(stroke, pdfLibModule)
   
   // Convertir coordenadas SVG a PDF (origen en esquina inferior izquierda)
   const pdfY = resolution.h - y - height
@@ -1301,7 +1305,7 @@ async function renderRect(page, element, resolution) {
 /**
  * Renderiza texto SVG
  */
-async function renderText(pdfDoc, page, element, resolution, embedFonts) {
+async function renderText(pdfDoc, page, element, resolution, embedFonts, pdfLibModule) {
   const x = parseFloat(element.getAttribute('x') || 0)
   const y = parseFloat(element.getAttribute('y') || 0)
   const fontSize = parseFloat(element.getAttribute('font-size') || 12)
@@ -1322,31 +1326,33 @@ async function renderText(pdfDoc, page, element, resolution, embedFonts) {
   try {
     if (embedFonts) {
       // Intentar embeber fuente personalizada (requiere archivo de fuente)
-      font = await pdfDoc.embedFont(StandardFonts.Helvetica) // Fallback
+      font = await pdfDoc.embedFont(pdfLibModule.StandardFonts.Helvetica) // Fallback
     } else {
       // Usar fuentes estándar
-      font = await pdfDoc.embedFont(StandardFonts.Helvetica)
+      font = await pdfDoc.embedFont(pdfLibModule.StandardFonts.Helvetica)
     }
   } catch (error) {
-    font = await pdfDoc.embedFont(StandardFonts.Helvetica)
+    font = await pdfDoc.embedFont(pdfLibModule.StandardFonts.Helvetica)
   }
   
-  const fillColor = parseSVGColor(fill)
+  const fillColor = parseSVGColor(fill, pdfLibModule)
   const pdfY = resolution.h - y - fontSize // Convertir coordenadas
   
   page.drawText(text, {
     x, y: pdfY,
     size: fontSize,
     font,
-    color: fillColor || rgb(0, 0, 0)
+    color: fillColor || pdfLibModule.rgb(0, 0, 0)
   })
 }
 
 /**
  * Parsea colores SVG a formato pdf-lib
  */
-function parseSVGColor(colorStr) {
+function parseSVGColor(colorStr, pdfLibModule) {
   if (!colorStr || colorStr === 'none') return null
+  
+  const { rgb } = pdfLibModule
   
   // Colores hexadecimales
   if (colorStr.startsWith('#')) {
@@ -1383,7 +1389,7 @@ function parseSVGColor(colorStr) {
 /**
  * Renderiza SVG como imagen rasterizada de alta calidad
  */
-async function renderSVGElementsAsRaster(pdfDoc, page, svgElement, resolution) {
+async function renderSVGElementsAsRaster(pdfDoc, page, svgElement, resolution, pdfLibModule) {
   return new Promise((resolve, reject) => {
     try {
       // Convertir imagenes a base64 primero
@@ -1410,7 +1416,7 @@ async function renderSVGElementsAsRaster(pdfDoc, page, svgElement, resolution) {
           const imageBytes = dataURItoUint8Array(imageData)
           
           try {
-            const pdfImage = await pdfDoc.embedPng(imageBytes)
+            const pdfImage = await pdfLibModule.embedPng(pdfDoc, imageBytes)
             page.drawImage(pdfImage, {
               x: 0, y: 0,
               width: resolution.w,
@@ -1446,7 +1452,7 @@ function dataURItoUint8Array(dataURI) {
 }
 
 // Implementaciones básicas para elementos restantes
-async function renderCircle(page, element, resolution) {
+async function renderCircle(page, element, resolution, pdfLibModule) {
   const cx = parseFloat(element.getAttribute('cx') || 0)
   const cy = parseFloat(element.getAttribute('cy') || 0)
   const r = parseFloat(element.getAttribute('r') || 0)
@@ -1455,8 +1461,8 @@ async function renderCircle(page, element, resolution) {
   
   if (r <= 0) return
   
-  const fillColor = parseSVGColor(fill)
-  const strokeColor = parseSVGColor(stroke)
+  const fillColor = parseSVGColor(fill, pdfLibModule)
+  const strokeColor = parseSVGColor(stroke, pdfLibModule)
   const pdfY = resolution.h - cy
   
   if (fillColor) {
@@ -1467,7 +1473,7 @@ async function renderCircle(page, element, resolution) {
   }
 }
 
-async function renderEllipse(page, element, resolution) {
+async function renderEllipse(page, element, resolution, pdfLibModule) {
   // Implementación simplificada como círculo por ahora
   const cx = parseFloat(element.getAttribute('cx') || 0)
   const cy = parseFloat(element.getAttribute('cy') || 0)
@@ -1481,10 +1487,10 @@ async function renderEllipse(page, element, resolution) {
   fakeCircle.setAttribute('cy', cy)
   fakeCircle.setAttribute('r', avgRadius)
   
-  await renderCircle(page, fakeCircle, resolution)
+  await renderCircle(page, fakeCircle, resolution, pdfLibModule)
 }
 
-async function renderLine(page, element, resolution) {
+async function renderLine(page, element, resolution, pdfLibModule) {
   // Implementación básica - pdf-lib no tiene líneas directas, usar path
   const x1 = parseFloat(element.getAttribute('x1') || 0)
   const y1 = parseFloat(element.getAttribute('y1') || 0)
@@ -1494,7 +1500,7 @@ async function renderLine(page, element, resolution) {
   
   if (!stroke || stroke === 'none') return
   
-  const strokeColor = parseSVGColor(stroke)
+  const strokeColor = parseSVGColor(stroke, pdfLibModule)
   const pdfY1 = resolution.h - y1
   const pdfY2 = resolution.h - y2
   
@@ -1511,14 +1517,14 @@ async function renderLine(page, element, resolution) {
   })
 }
 
-async function renderPolyline(page, element, resolution) {
+async function renderPolyline(page, element, resolution, pdfLibModule) {
   // Implementación simplificada - renderizar como puntos conectados
   const points = element.getAttribute('points')
   if (!points) return
   
   const coords = points.trim().split(/[\s,]+/).map(Number)
   const stroke = element.getAttribute('stroke')
-  const strokeColor = parseSVGColor(stroke)
+  const strokeColor = parseSVGColor(stroke, pdfLibModule)
   
   if (!strokeColor || coords.length < 4) return
   
@@ -1531,16 +1537,16 @@ async function renderPolyline(page, element, resolution) {
     fakeLine.setAttribute('y2', coords[i + 3])
     fakeLine.setAttribute('stroke', stroke)
     
-    await renderLine(page, fakeLine, resolution)
+    await renderLine(page, fakeLine, resolution, pdfLibModule)
   }
 }
 
-async function renderPath(page, element, resolution) {
+async function renderPath(page, element, resolution, pdfLibModule) {
   // Los paths son complejos, mejor renderizar como raster
   console.log('Path elements are rendered as raster for better quality')
 }
 
-async function renderImage(pdfDoc, page, element, resolution) {
+async function renderImage(pdfDoc, page, element, resolution, pdfLibModule) {
   const x = parseFloat(element.getAttribute('x') || 0)
   const y = parseFloat(element.getAttribute('y') || 0)
   const width = parseFloat(element.getAttribute('width') || 0)
