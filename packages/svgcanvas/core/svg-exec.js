@@ -49,6 +49,7 @@ let svgCanvas = null
  * @returns {void}
  */
 export const init = canvas => {
+  console.log('Inicializando svg-exec...')
   svgCanvas = canvas
   svgCanvas.setSvgString = setSvgString
   svgCanvas.importSvgString = importSvgString
@@ -61,7 +62,12 @@ export const init = canvas => {
   svgCanvas.embedImage = embedImage // Converts a given image file to a data URL when possibl
   svgCanvas.rasterExport = rasterExport // Generates a PNG (or JPG, BMP, WEBP) Data URL based on the current image
   svgCanvas.exportPDF = exportPDF // Generates a PDF based on the current image, then calls "exportedPDF"
+  
+  console.log('Registrando exportAdvancedPDF...')
+  console.log('Función exportAdvancedPDF:', typeof exportAdvancedPDF)
   svgCanvas.exportAdvancedPDF = exportAdvancedPDF // Generates an advanced PDF with layer support using pdf-lib
+  console.log('exportAdvancedPDF registrado:', typeof svgCanvas.exportAdvancedPDF)
+  console.log('svg-exec inicializado exitosamente')
 }
 
 /**
@@ -1038,6 +1044,8 @@ const exportAdvancedPDF = async (
   outputType = 'save',
   options = {}
 ) => {
+  console.log('exportAdvancedPDF llamada con:', { windowName, outputType, options })
+  
   const {
     preserveLayers = true,
     embedFonts = false,
@@ -1045,13 +1053,17 @@ const exportAdvancedPDF = async (
   } = options
 
   try {
+    console.log('Intentando importar pdf-lib...')
     // Importación dinámica de pdf-lib
     const pdfLibModule = await import('pdf-lib')
+    console.log('pdf-lib importado exitosamente:', pdfLibModule)
+    
     const { PDFDocument, rgb, StandardFonts } = pdfLibModule
     
     const res = svgCanvas.getResolution()
     const svgElement = svgCanvas.getSvgContent().cloneNode(true)
 
+    console.log('Creando documento PDF...')
     // Crear nuevo documento PDF
     const pdfDoc = await PDFDocument.create()
     const page = pdfDoc.addPage([res.w, res.h])
@@ -1063,6 +1075,7 @@ const exportAdvancedPDF = async (
     pdfDoc.setProducer('SVGEdit with pdf-lib')
     pdfDoc.setCreationDate(new Date())
 
+    console.log('Renderizando contenido...')
     if (preserveLayers) {
       // Exportación con capas preservadas
       await exportWithLayers(pdfDoc, page, svgElement, res, vectorMode, embedFonts, pdfLibModule)
@@ -1071,6 +1084,7 @@ const exportAdvancedPDF = async (
       await exportStandardAdvanced(pdfDoc, page, svgElement, res, vectorMode, embedFonts, pdfLibModule)
     }
 
+    console.log('Serializando PDF...')
     // Serializar PDF
     const pdfBytes = await pdfDoc.save()
     
@@ -1096,10 +1110,12 @@ const exportAdvancedPDF = async (
       document.body.removeChild(a)
       URL.revokeObjectURL(url)
       obj.output = 'downloaded'
+      console.log('PDF descargado exitosamente')
     } else {
       // Retornar como data URI
       const base64 = btoa(String.fromCharCode(...pdfBytes))
       obj.output = `data:application/pdf;base64,${base64}`
+      console.log('PDF generado como data URI')
     }
 
     svgCanvas.call('exportedAdvancedPDF', obj)
@@ -1107,7 +1123,16 @@ const exportAdvancedPDF = async (
 
   } catch (error) {
     console.error('Advanced PDF export failed:', error)
-    throw error
+    console.error('Stack trace:', error.stack)
+    
+    // Fallback a exportación PDF estándar
+    console.log('Fallback a exportación PDF estándar...')
+    try {
+      return await exportPDF(windowName, outputType)
+    } catch (fallbackError) {
+      console.error('Fallback PDF export también falló:', fallbackError)
+      throw error
+    }
   }
 }
 
