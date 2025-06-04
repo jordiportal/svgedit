@@ -773,9 +773,9 @@ const mouseUpEvent = (evt) => {
         keep = true
       }
       break
-    case 'text':
+    case 'text': {
       svgCanvas.setStarted(true)
-      /* const newText = */ svgCanvas.addSVGElementsFromJson({
+      const newText = svgCanvas.addSVGElementsFromJson({
         element: 'text',
         curStyles: true,
         attr: {
@@ -791,8 +791,39 @@ const mouseUpEvent = (evt) => {
           opacity: svgCanvas.getCurShape().opacity
         }
       })
-      // newText.textContent = 'text';
+      newText.textContent = 'Texto'
       break
+    }
+    case 'textmultiline': {
+      svgCanvas.setStarted(true)
+      const newTextMultiline = svgCanvas.addSVGElementsFromJson({
+        element: 'text',
+        curStyles: true,
+        attr: {
+          x,
+          y,
+          id: svgCanvas.getNextId(),
+          fill: svgCanvas.getCurText('fill'),
+          'stroke-width': svgCanvas.getCurText('stroke_width'),
+          'font-size': svgCanvas.getCurText('font_size'),
+          'font-family': svgCanvas.getCurText('font_family'),
+          'text-anchor': 'start',
+          'xml:space': 'preserve',
+          opacity: svgCanvas.getCurShape().opacity
+        }
+      })
+
+      // Añadir tspan inicial para multilínea
+      const tspan = document.createElementNS('http://www.w3.org/2000/svg', 'tspan')
+      tspan.setAttribute('x', x)
+      tspan.setAttribute('dy', '0')
+      tspan.textContent = 'Texto multilínea'
+      newTextMultiline.appendChild(tspan)
+
+      // Marcar como texto multilínea
+      newTextMultiline.setAttribute('data-multiline', 'true')
+      break
+    }
     case 'path':
     // Fall through
     case 'pathedit':
@@ -818,7 +849,8 @@ const mouseUpEvent = (evt) => {
       svgCanvas.recalculateAllSelectedDimensions()
       svgCanvas.call('changed', selectedElements)
       break
-    } default:
+    }
+    default:
       // This could occur in an extension
       break
   }
@@ -906,7 +938,7 @@ const mouseUpEvent = (evt) => {
       if (svgCanvas.getCurrentMode() === 'path') {
         svgCanvas.pathActions.toEditMode(element)
       } else if (svgCanvas.getCurConfig().selectNew) {
-        const modes = ['circle', 'ellipse', 'square', 'rect', 'fhpath', 'line', 'fhellipse', 'fhrect', 'star', 'polygon', 'shapelib']
+        const modes = ['circle', 'ellipse', 'square', 'rect', 'fhpath', 'line', 'fhellipse', 'fhrect', 'star', 'polygon', 'shapelib', 'text', 'textmultiline']
         if (modes.indexOf(svgCanvas.getCurrentMode()) !== -1 && !evt.altKey) {
           svgCanvas.setMode('select')
         }
@@ -1278,23 +1310,9 @@ const mouseDownEvent = (evt) => {
       break
     case 'text':
       svgCanvas.setStarted(true)
-      /* const newText = */ svgCanvas.addSVGElementsFromJson({
-        element: 'text',
-        curStyles: true,
-        attr: {
-          x,
-          y,
-          id: svgCanvas.getNextId(),
-          fill: svgCanvas.getCurText('fill'),
-          'stroke-width': svgCanvas.getCurText('stroke_width'),
-          'font-size': svgCanvas.getCurText('font_size'),
-          'font-family': svgCanvas.getCurText('font_family'),
-          'text-anchor': 'middle',
-          'xml:space': 'preserve',
-          opacity: curShape.opacity
-        }
-      })
-      // newText.textContent = 'text';
+      break
+    case 'textmultiline':
+      svgCanvas.setStarted(true)
       break
     case 'path':
     // Fall through
