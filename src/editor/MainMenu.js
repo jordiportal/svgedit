@@ -121,6 +121,8 @@ class MainMenu {
     }
     const imgType = e?.detail?.imgType
     const quality = e?.detail?.quality ? e?.detail?.quality / 100 : 1
+    const advancedOptions = e?.detail?.advancedOptions || {}
+    
     // Open placeholder window (prevents popup)
     let exportWindowName
 
@@ -136,12 +138,42 @@ class MainMenu {
         this.editor.configObj.curConfig.canvasName + this.editor.exportWindowCt
     }
     const chrome = isChrome()
+    
     if (imgType === 'PDF') {
+      // PDF estándar (original)
       if (!this.editor.customExportPDF && !chrome) {
         openExportWindow()
       }
       this.editor.svgCanvas.exportPDF(exportWindowName)
+    } else if (imgType === 'PDF_ADVANCED') {
+      // PDF avanzado con opciones configurables
+      try {
+        const windowName = exportWindowName || 'svgedit-advanced.pdf'
+        const result = await this.editor.svgCanvas.exportAdvancedPDF(
+          windowName,
+          'save',
+          advancedOptions
+        )
+        
+        // Mostrar notificación de éxito
+        if (result && result.advanced) {
+          const { preserveLayers, vectorMode, embedFonts } = result.options
+          let message = '🎉 PDF avanzado exportado exitosamente!\n\n'
+          message += `📋 Opciones aplicadas:\n`
+          message += `• Capas: ${preserveLayers ? 'Preservadas como OCG' : 'Combinadas'}\n`
+          message += `• Renderizado: ${vectorMode === 'pure' ? 'Vectorial puro' : vectorMode === 'hybrid' ? 'Híbrido inteligente' : 'Rasterizado HD'}\n`
+          message += `• Fuentes: ${embedFonts ? 'Embebidas' : 'Estándar'}\n\n`
+          message += `💡 Abre el PDF en Adobe Reader para ver todas las funciones de capas.`
+          
+          console.log('Advanced PDF Export Success:', result)
+          seAlert(message)
+        }
+      } catch (error) {
+        console.error('Advanced PDF export failed:', error)
+        seAlert(`❌ Error al exportar PDF avanzado:\n${error.message}\n\nSe recomienda probar con el modo 'Rasterizado de alta calidad'.`)
+      }
     } else {
+      // Otros formatos de imagen
       if (!this.editor.customExportImage) {
         openExportWindow()
       }

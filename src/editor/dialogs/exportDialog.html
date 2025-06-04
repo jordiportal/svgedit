@@ -19,7 +19,7 @@
         text-align: center;
         left: 50%;
         top: 50%;
-        max-width: 400px;
+        max-width: 450px;
         z-index: 50001;
         background: #5a6162;
         border: 1px outset #777;
@@ -51,14 +51,89 @@
     elix-number-spin-box {
         margin-left: 15px;
     }
+
+    .advanced-options {
+        margin: 15px 10px;
+        padding: 10px;
+        border: 1px solid #777;
+        border-radius: 3px;
+        background: #4a5152;
+        display: none;
+    }
+
+    .advanced-options.show {
+        display: block;
+    }
+
+    .advanced-options label {
+        display: block;
+        margin: 8px 0;
+        font-size: 0.9em;
+        color: #fff;
+        cursor: pointer;
+    }
+
+    .advanced-options input[type="checkbox"] {
+        margin-right: 8px;
+    }
+
+    .advanced-options select {
+        width: 100%;
+        margin: 5px 0;
+        padding: 3px;
+        background: #fff;
+        border: 1px solid #999;
+        border-radius: 2px;
+    }
+
+    .option-group {
+        margin: 12px 0;
+        padding: 8px;
+        border-left: 3px solid #0099cc;
+        background: #3a4142;
+    }
+
+    .option-group h4 {
+        margin: 0 0 8px 0;
+        color: #0099cc;
+        font-size: 0.85em;
+        font-weight: bold;
+    }
 </style>
 <elix-dialog id="export_box" aria-label="export svg" closed>
     <div class="overlay"></div>
     <div id="dialog_container">
         <div id="dialog_content">
             <p id="export_select"></p>
-            <se-select id="se-storage-pref" label="" options="PNG,JPEG,BMP,WEBP,PDF" values="PNG::JPEG::BMP::WEBP::PDF"></se-select>
+            <se-select id="se-storage-pref" label="" options="PNG,JPEG,BMP,WEBP,PDF,PDF Avanzado" values="PNG::JPEG::BMP::WEBP::PDF::PDF_ADVANCED"></se-select>
             <se-spin-input id="se-quality" label="ui.quality" size="3" min="0" max="100" value="100" step="5" />
+            
+            <div id="pdf-advanced-options" class="advanced-options">
+                <div class="option-group">
+                    <h4>🎨 Opciones de Capas</h4>
+                    <label>
+                        <input type="checkbox" id="preserve-layers" checked>
+                        Preservar capas como grupos OCG (recomendado)
+                    </label>
+                </div>
+                
+                <div class="option-group">
+                    <h4>⚡ Modo de Renderizado</h4>
+                    <select id="vector-mode">
+                        <option value="hybrid">Híbrido (recomendado)</option>
+                        <option value="pure">Vectorial puro</option>
+                        <option value="raster">Rasterizado de alta calidad</option>
+                    </select>
+                </div>
+                
+                <div class="option-group">
+                    <h4>🔤 Opciones de Fuentes</h4>
+                    <label>
+                        <input type="checkbox" id="embed-fonts">
+                        Embeber fuentes personalizadas
+                    </label>
+                </div>
+            </div>
         </div>
         <div id="dialog_buttons">
             <button id="export_ok"></button>

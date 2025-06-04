@@ -22,6 +22,10 @@ export class SeExportDialog extends HTMLElement {
     this.$exportOption = this._shadowRoot.querySelector('#se-storage-pref')
     this.$qualityCont = this._shadowRoot.querySelector('#se-quality')
     this.$input = this._shadowRoot.querySelector('#se-quality')
+    this.$advancedOptions = this._shadowRoot.querySelector('#pdf-advanced-options')
+    this.$preserveLayers = this._shadowRoot.querySelector('#preserve-layers')
+    this.$vectorMode = this._shadowRoot.querySelector('#vector-mode')
+    this.$embedFonts = this._shadowRoot.querySelector('#embed-fonts')
     this.value = 1
   }
 
@@ -111,11 +115,24 @@ export class SeExportDialog extends HTMLElement {
       if (action === 'cancel') {
         document.getElementById('se-export-dialog').setAttribute('dialog', 'close')
       } else {
+        const exportType = this.$exportOption.value
+        let advancedOptions = {}
+        
+        // Si es PDF avanzado, recopilar opciones adicionales
+        if (exportType === 'PDF_ADVANCED') {
+          advancedOptions = {
+            preserveLayers: this.$preserveLayers.checked,
+            vectorMode: this.$vectorMode.value,
+            embedFonts: this.$embedFonts.checked
+          }
+        }
+        
         const triggerEvent = new CustomEvent('change', {
           detail: {
             trigger: action,
-            imgType: this.$exportOption.value,
-            quality: this.value
+            imgType: exportType,
+            quality: this.value,
+            advancedOptions
           }
         })
         this.dispatchEvent(triggerEvent)
@@ -123,10 +140,20 @@ export class SeExportDialog extends HTMLElement {
       }
     }
     const onChangeHandler = (e) => {
-      if (e.target.value === 'PDF') {
+      const selectedType = e.target.value
+      
+      // Mostrar/ocultar panel de calidad
+      if (selectedType === 'PDF' || selectedType === 'PDF_ADVANCED') {
         this.$qualityCont.style.display = 'none'
       } else {
         this.$qualityCont.style.display = 'block'
+      }
+      
+      // Mostrar/ocultar opciones avanzadas de PDF
+      if (selectedType === 'PDF_ADVANCED') {
+        this.$advancedOptions.classList.add('show')
+      } else {
+        this.$advancedOptions.classList.remove('show')
       }
     }
     svgEditor.$click(this.$okBtn, (evt) => onSubmitHandler(evt, 'ok'))

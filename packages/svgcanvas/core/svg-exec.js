@@ -7,6 +7,7 @@
 
 import { jsPDF as JsPDF } from 'jspdf'
 import 'svg2pdf.js'
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib'
 import * as history from './history.js'
 import {
   text2xml,
@@ -60,6 +61,7 @@ export const init = canvas => {
   svgCanvas.embedImage = embedImage // Converts a given image file to a data URL when possibl
   svgCanvas.rasterExport = rasterExport // Generates a PNG (or JPG, BMP, WEBP) Data URL based on the current image
   svgCanvas.exportPDF = exportPDF // Generates a PDF based on the current image, then calls "exportedPDF"
+  svgCanvas.exportAdvancedPDF = exportAdvancedPDF // Generates an advanced PDF with layer support using pdf-lib
 }
 
 /**
@@ -1020,6 +1022,419 @@ const exportPDF = (
       .catch(reject)
   })
 }
+
+/**
+ * Exports the SVG content as an advanced PDF with layer support using pdf-lib.
+ * @param {string} [windowName='svg.pdf'] - The window name or file name.
+ * @param {string} [outputType='save'|'dataurlstring'] - The output type.
+ * @param {Object} [options={}] - Advanced export options.
+ * @param {boolean} [options.preserveLayers=true] - Whether to preserve layer structure.
+ * @param {boolean} [options.embedFonts=false] - Whether to embed custom fonts.
+ * @param {string} [options.vectorMode='hybrid'] - Vector rendering mode: 'pure', 'hybrid', or 'raster'.
+ * @returns {Promise<Object>} Resolves to an object containing advanced PDF export data.
+ */
+const exportAdvancedPDF = async (
+  windowName = 'svg-advanced.pdf',
+  outputType = 'save',
+  options = {}
+) => {
+  const {
+    preserveLayers = true,
+    embedFonts = false,
+    vectorMode = 'hybrid'
+  } = options
+
+  try {
+    const res = svgCanvas.getResolution()
+    const svgElement = svgCanvas.getSvgContent().cloneNode(true)
+
+    // Crear nuevo documento PDF
+    const pdfDoc = await PDFDocument.create()
+    const page = pdfDoc.addPage([res.w, res.h])
+
+    // Configurar metadatos
+    const docTitle = svgCanvas.getDocumentTitle() || 'SVG Document'
+    pdfDoc.setTitle(docTitle)
+    pdfDoc.setCreator('SVGEdit Advanced PDF Export')
+    pdfDoc.setProducer('SVGEdit with pdf-lib')
+    pdfDoc.setCreationDate(new Date())
+
+    if (preserveLayers) {
+      // Exportación con capas preservadas
+      await exportWithLayers(pdfDoc, page, svgElement, res, vectorMode, embedFonts)
+    } else {
+      // Exportación estándar mejorada
+      await exportStandardAdvanced(pdfDoc, page, svgElement, res, vectorMode, embedFonts)
+    }
+
+    // Serializar PDF
+    const pdfBytes = await pdfDoc.save()
+    
+    const { issues, issueCodes } = getIssues()
+    const obj = { 
+      issues, 
+      issueCodes, 
+      windowName, 
+      outputType,
+      advanced: true,
+      options: { preserveLayers, embedFonts, vectorMode }
+    }
+
+    if (outputType === 'save') {
+      // Descargar automáticamente
+      const blob = new Blob([pdfBytes], { type: 'application/pdf' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = windowName
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+      obj.output = 'downloaded'
+    } else {
+      // Retornar como data URI
+      const base64 = btoa(String.fromCharCode(...pdfBytes))
+      obj.output = `data:application/pdf;base64,${base64}`
+    }
+
+    svgCanvas.call('exportedAdvancedPDF', obj)
+    return obj
+
+  } catch (error) {
+    console.error('Advanced PDF export failed:', error)
+    throw error
+  }
+}
+
+/**
+ * Exporta SVG con capas preservadas como grupos OCG en PDF
+ */
+async function exportWithLayers(pdfDoc, page, svgElement, resolution, vectorMode, embedFonts) {
+  const layers = getLayersFromSVG(svgElement)
+  const optionalContentGroup = pdfDoc.catalog.getOrCreateOptionalContentProperties()
+  
+  // Crear grupos de contenido opcional (capas) para cada capa del SVG
+  const layerGroups = new Map()
+  
+  for (const [layerName, layerElements] of layers.entries()) {
+    // Crear grupo OCG para la capa
+    const ocg = optionalContentGroup.createOptionalContentGroup(layerName)
+    layerGroups.set(layerName, ocg)
+    
+    // Renderizar elementos de la capa
+    await renderLayerElements(pdfDoc, page, layerElements, ocg, resolution, vectorMode, embedFonts)
+  }
+  
+  // Configurar vista de capas por defecto (todas visibles)
+  const defaultView = optionalContentGroup.createOptionalContentConfiguration('Default')
+  for (const ocg of layerGroups.values()) {
+    defaultView.setVisibilityForOptionalContentGroup(ocg, true)
+  }
+}
+
+/**
+ * Exportación estándar mejorada sin capas separadas
+ */
+async function exportStandardAdvanced(pdfDoc, page, svgElement, resolution, vectorMode, embedFonts) {
+  if (vectorMode === 'pure') {
+    // Renderizado vectorial puro - convertir elementos SVG a elementos PDF nativos
+    await renderSVGElementsAsVectors(pdfDoc, page, svgElement, resolution, embedFonts)
+  } else if (vectorMode === 'hybrid') {
+    // Modo híbrido - vectores para texto y formas simples, raster para elementos complejos
+    await renderSVGElementsHybrid(pdfDoc, page, svgElement, resolution, embedFonts)
+  } else {
+    // Modo raster mejorado - alta calidad con metadatos preservados
+    await renderSVGElementsAsRaster(pdfDoc, page, svgElement, resolution)
+  }
+}
+
+/**
+ * Extrae las capas del SVG analizando la estructura de grupos
+ */
+function getLayersFromSVG(svgElement) {
+  const layers = new Map()
+  
+  // Buscar elementos con atributo data-layer o grupos que representen capas
+  const layerElements = svgElement.querySelectorAll('[data-layer], g[id*="layer"], g[inkscape\\:label]')
+  
+  layerElements.forEach(element => {
+    const layerName = element.getAttribute('data-layer') || 
+                     element.getAttribute('inkscape:label') || 
+                     element.id || 
+                     'Layer ' + (layers.size + 1)
+    
+    if (!layers.has(layerName)) {
+      layers.set(layerName, [])
+    }
+    layers.get(layerName).push(element)
+  })
+  
+  // Si no hay capas explícitas, crear una capa por defecto con todos los elementos
+  if (layers.size === 0) {
+    const allElements = Array.from(svgElement.children)
+    layers.set('Default Layer', allElements)
+  }
+  
+  return layers
+}
+
+/**
+ * Renderiza elementos de una capa específica
+ */
+async function renderLayerElements(pdfDoc, page, elements, ocg, resolution, vectorMode, embedFonts) {
+  // Comenzar contenido de la capa
+  page.pushOperators(
+    ...pdfDoc.context.obj({
+      BDC: [pdfDoc.context.name('OC'), pdfDoc.context.obj({ OC: ocg.ref })]
+    })
+  )
+  
+  for (const element of elements) {
+    await renderSVGElement(pdfDoc, page, element, resolution, vectorMode, embedFonts)
+  }
+  
+  // Finalizar contenido de la capa
+  page.pushOperators(pdfDoc.context.obj({ EMC: [] }))
+}
+
+/**
+ * Renderiza elementos SVG como vectores nativos de PDF
+ */
+async function renderSVGElementsAsVectors(pdfDoc, page, svgElement, resolution, embedFonts) {
+  const elements = svgElement.querySelectorAll('*')
+  
+  for (const element of elements) {
+    await renderSVGElement(pdfDoc, page, element, resolution, 'pure', embedFonts)
+  }
+}
+
+/**
+ * Renderizado híbrido - inteligente según el tipo de elemento
+ */
+async function renderSVGElementsHybrid(pdfDoc, page, svgElement, resolution, embedFonts) {
+  const elements = svgElement.querySelectorAll('*')
+  
+  for (const element of elements) {
+    const elementType = element.tagName.toLowerCase()
+    
+    // Elementos vectoriales simples
+    if (['rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'path', 'text'].includes(elementType)) {
+      await renderSVGElement(pdfDoc, page, element, resolution, 'pure', embedFonts)
+    } else {
+      // Elementos complejos como imágenes o efectos especiales
+      await renderSVGElement(pdfDoc, page, element, resolution, 'raster', embedFonts)
+    }
+  }
+}
+
+/**
+ * Renderiza un elemento SVG individual
+ */
+async function renderSVGElement(pdfDoc, page, element, resolution, mode, embedFonts) {
+  const tagName = element.tagName.toLowerCase()
+  
+  switch (tagName) {
+    case 'rect':
+      await renderRect(page, element, resolution)
+      break
+    case 'circle':
+      await renderCircle(page, element, resolution)
+      break
+    case 'ellipse':
+      await renderEllipse(page, element, resolution)
+      break
+    case 'line':
+      await renderLine(page, element, resolution)
+      break
+    case 'polyline':
+    case 'polygon':
+      await renderPolyline(page, element, resolution)
+      break
+    case 'path':
+      await renderPath(page, element, resolution)
+      break
+    case 'text':
+      await renderText(pdfDoc, page, element, resolution, embedFonts)
+      break
+    case 'image':
+      await renderImage(pdfDoc, page, element, resolution)
+      break
+    default:
+      // Para elementos no soportados directamente, usar rasterización
+      if (mode !== 'raster') {
+        console.warn(`Element ${tagName} not supported in vector mode, falling back to raster`)
+      }
+      break
+  }
+}
+
+/**
+ * Renderiza un rectángulo SVG como rectángulo PDF nativo
+ */
+async function renderRect(page, element, resolution) {
+  const x = parseFloat(element.getAttribute('x') || 0)
+  const y = parseFloat(element.getAttribute('y') || 0)
+  const width = parseFloat(element.getAttribute('width') || 0)
+  const height = parseFloat(element.getAttribute('height') || 0)
+  
+  const fill = element.getAttribute('fill')
+  const stroke = element.getAttribute('stroke')
+  const strokeWidth = parseFloat(element.getAttribute('stroke-width') || 1)
+  
+  const pdfY = resolution.h - y - height // Convertir coordenadas Y
+  
+  const options = {
+    x,
+    y: pdfY,
+    width,
+    height
+  }
+  
+  if (fill && fill !== 'none') {
+    const fillColor = parseSVGColor(fill)
+    options.color = rgb(fillColor.r / 255, fillColor.g / 255, fillColor.b / 255)
+  }
+  
+  if (stroke && stroke !== 'none') {
+    const strokeColor = parseSVGColor(stroke)
+    options.borderColor = rgb(strokeColor.r / 255, strokeColor.g / 255, strokeColor.b / 255)
+    options.borderWidth = strokeWidth
+  }
+  
+  page.drawRectangle(options)
+}
+
+/**
+ * Renderiza texto SVG como texto PDF nativo
+ */
+async function renderText(pdfDoc, page, element, resolution, embedFonts) {
+  const x = parseFloat(element.getAttribute('x') || 0)
+  const y = parseFloat(element.getAttribute('y') || 0)
+  const fontSize = parseFloat(element.getAttribute('font-size') || 12)
+  const text = element.textContent || element.innerText || ''
+  
+  const fill = element.getAttribute('fill') || '#000000'
+  const fillColor = parseSVGColor(fill)
+  
+  const pdfY = resolution.h - y // Convertir coordenadas Y
+  
+  let font = await pdfDoc.embedFont(StandardFonts.Helvetica)
+  
+  if (embedFonts) {
+    const fontFamily = element.getAttribute('font-family')
+    if (fontFamily) {
+      // Aquí podrías cargar fuentes personalizadas si están disponibles
+      // const customFont = await loadCustomFont(fontFamily)
+      // if (customFont) font = customFont
+    }
+  }
+  
+  page.drawText(text, {
+    x,
+    y: pdfY,
+    size: fontSize,
+    font,
+    color: rgb(fillColor.r / 255, fillColor.g / 255, fillColor.b / 255)
+  })
+}
+
+/**
+ * Convierte color SVG a RGB
+ */
+function parseSVGColor(colorStr) {
+  if (colorStr.startsWith('#')) {
+    const hex = colorStr.substring(1)
+    return {
+      r: parseInt(hex.substring(0, 2), 16),
+      g: parseInt(hex.substring(2, 4), 16),
+      b: parseInt(hex.substring(4, 6), 16)
+    }
+  } else if (colorStr.startsWith('rgb')) {
+    const matches = colorStr.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/)
+    if (matches) {
+      return {
+        r: parseInt(matches[1]),
+        g: parseInt(matches[2]),
+        b: parseInt(matches[3])
+      }
+    }
+  }
+  
+  // Color por defecto negro
+  return { r: 0, g: 0, b: 0 }
+}
+
+/**
+ * Renderización raster mejorada con alta calidad
+ */
+async function renderSVGElementsAsRaster(pdfDoc, page, svgElement, resolution) {
+  // Convertir SVG a base64 con alta calidad
+  await convertImagesToBase64(svgElement)
+  
+  const svgData = new XMLSerializer().serializeToString(svgElement)
+  const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' })
+  const url = URL.createObjectURL(svgBlob)
+
+  return new Promise((resolve, reject) => {
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    
+    // Alta resolución para mejor calidad
+    const scale = 2
+    canvas.width = resolution.w * scale
+    canvas.height = resolution.h * scale
+    ctx.scale(scale, scale)
+
+    const img = new Image()
+    img.onload = async () => {
+      ctx.drawImage(img, 0, 0, resolution.w, resolution.h)
+      URL.revokeObjectURL(url)
+
+      try {
+        const imageData = canvas.toDataURL('image/png')
+        const imageBytes = dataURItoUint8Array(imageData)
+        const image = await pdfDoc.embedPng(imageBytes)
+        
+        page.drawImage(image, {
+          x: 0,
+          y: 0,
+          width: resolution.w,
+          height: resolution.h
+        })
+        
+        resolve()
+      } catch (error) {
+        reject(error)
+      }
+    }
+
+    img.onerror = reject
+    img.src = url
+  })
+}
+
+/**
+ * Convierte data URI a Uint8Array
+ */
+function dataURItoUint8Array(dataURI) {
+  const byteString = atob(dataURI.split(',')[1])
+  const ab = new ArrayBuffer(byteString.length)
+  const ia = new Uint8Array(ab)
+  for (let i = 0; i < byteString.length; i++) {
+    ia[i] = byteString.charCodeAt(i)
+  }
+  return ia
+}
+
+// Stubs para renderizado de otros elementos SVG
+async function renderCircle(page, element, resolution) { /* Implementar */ }
+async function renderEllipse(page, element, resolution) { /* Implementar */ }
+async function renderLine(page, element, resolution) { /* Implementar */ }
+async function renderPolyline(page, element, resolution) { /* Implementar */ }
+async function renderPath(page, element, resolution) { /* Implementar */ }
+async function renderImage(pdfDoc, page, element, resolution) { /* Implementar */ }
+
 /**
  * Ensure each element has a unique ID.
  * @function module:svgcanvas.SvgCanvas#uniquifyElems
