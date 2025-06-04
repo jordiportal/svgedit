@@ -18,7 +18,7 @@ import {
   transformBox,
   getTransformList
 } from './math.js'
-import { convertToNum } from './units.js'
+import { NS } from './namespaces.js'
 
 let svgCanvas = null
 

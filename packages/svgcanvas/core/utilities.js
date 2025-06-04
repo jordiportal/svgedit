@@ -540,7 +540,7 @@ export const getBBox = function (elem) {
           break
         }
       }
-      
+
       // Para texto normal, usar el comportamiento estándar
       if (selected.textContent === '') {
         selected.textContent = 'a' // Some character needed for the selector to use.

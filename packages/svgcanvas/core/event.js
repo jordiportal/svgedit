@@ -282,7 +282,7 @@ const mouseMoveEvent = (evt) => {
           if (textBoxRect) {
             textBoxRect.setAttribute('width', newWidth)
             textBoxRect.setAttribute('height', newHeight)
-            
+
             // Actualizar posición si es redimensionamiento desde bordes izquierdo o superior
             if (resizeMode.includes('w')) {
               const newX = (bbox.x + initialWidth) - newWidth

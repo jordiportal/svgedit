@@ -600,7 +600,7 @@ const deleteSelectedElements = () => {
       svgCanvas.gettingSelectorManager().releaseSelector(t)
       // Remove the path if present.
       pathModule.removePath_(t.id)
-      
+
       // Si es texto multilínea, eliminar también su rectángulo de fondo
       if (t.tagName === 'text' && t.getAttribute('data-multiline') === 'true') {
         const textBoxRect = document.querySelector(`[data-text-box-bg="${t.getAttribute('id')}"]`)
@@ -608,7 +608,7 @@ const deleteSelectedElements = () => {
           textBoxRect.remove()
         }
       }
-      
+
       // Get the parent if it's a single-child anchor
       if (parent.tagName === 'a' && parent.childNodes.length === 1) {
         t = parent
